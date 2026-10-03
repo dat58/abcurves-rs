@@ -1,0 +1,30 @@
+[package]
+name = "abcurves"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.86.0"
+license = "MIT"
+description = "Continuous human movement generation and static continuation, with native hardware texture."
+repository = "https://github.com/dat58/abcurves-rs"
+readme = "README.md"
+keywords = ["movement", "inference", "prodmp", "renderer"]
+categories = ["algorithms", "simulation"]
+
+[dependencies]
+sha2 = "0.10"
+candle-core = { version = "0.9", optional = true }
+
+[features]
+default = []
+candle = ["dep:candle-core"]
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+
+[profile.bench]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
