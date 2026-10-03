@@ -64,13 +64,19 @@ impl ZipArchive {
             let local_extra = usize::from(u16_at(&bytes, local + 28)?);
             let start = local + 30 + local_name + local_extra;
             if start + size > bytes.len() {
-                return Err(Error::Format(format!("zip entry {name} runs past the file")));
+                return Err(Error::Format(format!(
+                    "zip entry {name} runs past the file"
+                )));
             }
             order.push(name.clone());
             entries.insert(name, (start, size));
             cursor += 46 + name_length + extra_length + comment_length;
         }
-        Ok(Self { bytes, entries, order })
+        Ok(Self {
+            bytes,
+            entries,
+            order,
+        })
     }
 
     pub fn names(&self) -> &[String] {

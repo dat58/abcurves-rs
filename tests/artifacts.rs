@@ -1,3 +1,5 @@
+#![allow(clippy::needless_range_loop)]
+
 mod common;
 
 use abcurves::io::{Checkpoint, Npz};
@@ -24,8 +26,10 @@ fn check_digests(
     let mut cursor = 0usize;
     for (index, name) in names.iter().enumerate() {
         let rank = shapes[cursor] as usize;
-        let expected_shape: Vec<usize> =
-            shapes[cursor + 1..cursor + 1 + rank].iter().map(|&d| d as usize).collect();
+        let expected_shape: Vec<usize> = shapes[cursor + 1..cursor + 1 + rank]
+            .iter()
+            .map(|&d| d as usize)
+            .collect();
         cursor += 1 + rank;
         let (shape, bytes) = lookup(name);
         assert_eq!(shape, expected_shape, "shape of {name}");
@@ -75,7 +79,9 @@ fn planner_checkpoint_loads_exactly() {
         &read_i64(FIXTURE, "planner_shapes"),
         &read_u8(FIXTURE, "planner_digests"),
         |name| {
-            let value = state.get(name).unwrap_or_else(|| checkpoint.root().entry(name).unwrap());
+            let value = state
+                .get(name)
+                .unwrap_or_else(|| checkpoint.root().entry(name).unwrap());
             let array = checkpoint.tensor(value.as_tensor().unwrap()).unwrap();
             (array.shape.clone(), array.bytes.clone())
         },
@@ -85,18 +91,31 @@ fn planner_checkpoint_loads_exactly() {
     let root = checkpoint.root();
     assert_eq!(root.entry("heads").unwrap().as_i64().unwrap(), meta[0]);
     assert_eq!(root.entry("horizon").unwrap().as_i64().unwrap(), meta[1]);
-    assert_eq!(root.entry("summary_dim").unwrap().as_i64().unwrap(), meta[2]);
+    assert_eq!(
+        root.entry("summary_dim").unwrap().as_i64().unwrap(),
+        meta[2]
+    );
     assert_eq!(root.entry("target_dim").unwrap().as_i64().unwrap(), meta[3]);
     let config = root.entry("planner_config").unwrap();
-    assert_eq!(config.entry("prefix_len").unwrap().as_i64().unwrap(), meta[4]);
+    assert_eq!(
+        config.entry("prefix_len").unwrap().as_i64().unwrap(),
+        meta[4]
+    );
     let prodmp = root.entry("prodmp").unwrap();
     assert_eq!(prodmp.entry("n_basis").unwrap().as_i64().unwrap(), meta[5]);
 
     let scalars = read_f64(FIXTURE, "scalars");
     assert_eq!(prodmp.entry("alpha").unwrap().as_f64().unwrap(), scalars[0]);
-    assert_eq!(prodmp.entry("alpha_phase").unwrap().as_f64().unwrap(), scalars[1]);
+    assert_eq!(
+        prodmp.entry("alpha_phase").unwrap().as_f64().unwrap(),
+        scalars[1]
+    );
     assert_eq!(prodmp.entry("ridge").unwrap().as_f64().unwrap(), scalars[2]);
-    let hinge = root.entry("hinge_thresholds").unwrap().as_sequence().unwrap();
+    let hinge = root
+        .entry("hinge_thresholds")
+        .unwrap()
+        .as_sequence()
+        .unwrap();
     for (index, value) in hinge.iter().enumerate() {
         assert_eq!(value.as_f64().unwrap(), scalars[3 + index]);
     }
@@ -104,18 +123,38 @@ fn planner_checkpoint_loads_exactly() {
     let text = text_lines("text");
     let seam = root.entry("seam_contract").unwrap();
     assert_eq!(root.entry("schema").unwrap().as_str().unwrap(), text[0]);
-    assert_eq!(root.entry("release_schema").unwrap().as_str().unwrap(), text[1]);
-    assert_eq!(root.entry("release_status").unwrap().as_str().unwrap(), text[2]);
+    assert_eq!(
+        root.entry("release_schema").unwrap().as_str().unwrap(),
+        text[1]
+    );
+    assert_eq!(
+        root.entry("release_status").unwrap().as_str().unwrap(),
+        text[2]
+    );
     assert_eq!(seam.entry("schema").unwrap().as_str().unwrap(), text[3]);
     assert_eq!(
-        seam.entry("trigger").unwrap().entry("reference").unwrap().as_str().unwrap(),
+        seam.entry("trigger")
+            .unwrap()
+            .entry("reference")
+            .unwrap()
+            .as_str()
+            .unwrap(),
         text[4]
     );
     assert_eq!(
-        root.entry("prefix_representation").unwrap().entry("name").unwrap().as_str().unwrap(),
+        root.entry("prefix_representation")
+            .unwrap()
+            .entry("name")
+            .unwrap()
+            .as_str()
+            .unwrap(),
         text[5]
     );
-    let summary = root.entry("summary_feature_names").unwrap().as_sequence().unwrap();
+    let summary = root
+        .entry("summary_feature_names")
+        .unwrap()
+        .as_sequence()
+        .unwrap();
     assert_eq!(summary.len(), 62);
     for (index, value) in summary.iter().enumerate() {
         assert_eq!(value.as_str().unwrap(), text[6 + index]);

@@ -14,23 +14,67 @@ pub const HORIZON: usize = 1000;
 pub const PREFIX_LEN: usize = 160;
 
 pub const CANONICAL_FEATURE_NAMES: [&str; SUMMARY_LEN] = [
-    "prefix_duration_ms", "prefix_dx", "prefix_dy", "prefix_distance", "prefix_path_length",
-    "prefix_straightness", "prefix_target_axis_progress", "prefix_lateral_error", "target_rel_x",
-    "target_rel_y", "target_distance", "target_radius", "distance_over_radius", "target_unit_x",
-    "target_unit_y", "progress_context", "inside_target_at_B", "near_target_flag",
-    "prefix_crossing_state", "prefix_overshoot_state", "prefix_min_target_distance_over_radius",
-    "prefix_near_target_rate", "last_velocity_x", "last_velocity_y", "movement_dir_x",
-    "movement_dir_y", "speed_at_B", "mean_prefix_speed", "peak_prefix_speed", "prefix_speed_std",
-    "relative_speed_distance", "relative_speed_radius", "velocity_toward_target",
-    "velocity_tangential_to_target", "direction_alignment_cos", "direction_alignment_sin",
-    "direction_error_deg", "accel_at_B", "accel_toward_target", "accel_lateral",
-    "recent_speed_slope", "recent_accel_slope", "deceleration_indicator", "speed_drop_recent",
-    "jerk_at_B", "discontinuity_speed_jump", "recent_zero_rate", "recent_sign_flip_rate",
-    "recent_direction_change_rate", "active_motion_flag", "stabilization_like_flag",
-    "prefix_shape_curvature_signed", "prefix_shape_curvature_abs",
-    "prefix_shape_dir_change_mean_deg", "prefix_shape_dir_change_slope",
-    "prefix_shape_approach_cos", "prefix_shape_approach_sin", "prefix_shape_speed_bin_0",
-    "prefix_shape_speed_bin_1", "prefix_shape_speed_bin_2", "prefix_shape_speed_bin_3",
+    "prefix_duration_ms",
+    "prefix_dx",
+    "prefix_dy",
+    "prefix_distance",
+    "prefix_path_length",
+    "prefix_straightness",
+    "prefix_target_axis_progress",
+    "prefix_lateral_error",
+    "target_rel_x",
+    "target_rel_y",
+    "target_distance",
+    "target_radius",
+    "distance_over_radius",
+    "target_unit_x",
+    "target_unit_y",
+    "progress_context",
+    "inside_target_at_B",
+    "near_target_flag",
+    "prefix_crossing_state",
+    "prefix_overshoot_state",
+    "prefix_min_target_distance_over_radius",
+    "prefix_near_target_rate",
+    "last_velocity_x",
+    "last_velocity_y",
+    "movement_dir_x",
+    "movement_dir_y",
+    "speed_at_B",
+    "mean_prefix_speed",
+    "peak_prefix_speed",
+    "prefix_speed_std",
+    "relative_speed_distance",
+    "relative_speed_radius",
+    "velocity_toward_target",
+    "velocity_tangential_to_target",
+    "direction_alignment_cos",
+    "direction_alignment_sin",
+    "direction_error_deg",
+    "accel_at_B",
+    "accel_toward_target",
+    "accel_lateral",
+    "recent_speed_slope",
+    "recent_accel_slope",
+    "deceleration_indicator",
+    "speed_drop_recent",
+    "jerk_at_B",
+    "discontinuity_speed_jump",
+    "recent_zero_rate",
+    "recent_sign_flip_rate",
+    "recent_direction_change_rate",
+    "active_motion_flag",
+    "stabilization_like_flag",
+    "prefix_shape_curvature_signed",
+    "prefix_shape_curvature_abs",
+    "prefix_shape_dir_change_mean_deg",
+    "prefix_shape_dir_change_slope",
+    "prefix_shape_approach_cos",
+    "prefix_shape_approach_sin",
+    "prefix_shape_speed_bin_0",
+    "prefix_shape_speed_bin_1",
+    "prefix_shape_speed_bin_2",
+    "prefix_shape_speed_bin_3",
     "prefix_shape_recent_lateral_drift",
 ];
 
@@ -67,7 +111,11 @@ fn transpose(values: &[f32], rows: usize, columns: usize) -> Vec<f32> {
 }
 
 impl FastPlanner {
-    pub fn from_pretrained(model_seed: u32, model_dir: Option<&Path>, prewarm: bool) -> Result<Self> {
+    pub fn from_pretrained(
+        model_seed: u32,
+        model_dir: Option<&Path>,
+        prewarm: bool,
+    ) -> Result<Self> {
         let files = model_store::resolve_model_files(model_seed, model_dir, true)?;
         let mut planner = Self::open(&files.planner, prewarm)?;
         planner.seed = model_seed;
@@ -117,12 +165,16 @@ impl FastPlanner {
             "Planner causal B contract differs from the release",
         )?;
         require(
-            root.entry("prefix_representation")?.entry("name")?.as_str()? == "raw",
+            root.entry("prefix_representation")?
+                .entry("name")?
+                .as_str()?
+                == "raw",
             "release Planner prefix representation differs",
         )?;
 
         let state = root.entry("model_state_dict")?;
-        let tensor = |value: &Value| -> Result<Vec<f32>> { checkpoint.tensor(value.as_tensor()?)?.to_f32() };
+        let tensor =
+            |value: &Value| -> Result<Vec<f32>> { checkpoint.tensor(value.as_tensor()?)?.to_f32() };
         let from_state = |name: &str| -> Result<Vec<f32>> { tensor(state.entry(name)?) };
 
         let input_weight = from_state("encoder.input.weight")?;
@@ -147,12 +199,15 @@ impl FastPlanner {
                         }
                     }
                 }
-                conv_bias[index * CHANNELS..(index + 1) * CHANNELS]
-                    .copy_from_slice(&from_state(&format!("encoder.blocks.{block}.conv{suffix}.bias"))?);
-                norm_weight[index * CHANNELS..(index + 1) * CHANNELS]
-                    .copy_from_slice(&from_state(&format!("encoder.blocks.{block}.norm{suffix}.weight"))?);
-                norm_bias[index * CHANNELS..(index + 1) * CHANNELS]
-                    .copy_from_slice(&from_state(&format!("encoder.blocks.{block}.norm{suffix}.bias"))?);
+                conv_bias[index * CHANNELS..(index + 1) * CHANNELS].copy_from_slice(&from_state(
+                    &format!("encoder.blocks.{block}.conv{suffix}.bias"),
+                )?);
+                norm_weight[index * CHANNELS..(index + 1) * CHANNELS].copy_from_slice(&from_state(
+                    &format!("encoder.blocks.{block}.norm{suffix}.weight"),
+                )?);
+                norm_bias[index * CHANNELS..(index + 1) * CHANNELS].copy_from_slice(&from_state(
+                    &format!("encoder.blocks.{block}.norm{suffix}.bias"),
+                )?);
             }
         }
 
@@ -224,7 +279,9 @@ impl FastPlanner {
 
         #[cfg(feature = "candle")]
         let candle = match backend {
-            NeuralInference::Candle => Some(super::candle::CandleTcn::load(&checkpoint, summary_dim)?),
+            NeuralInference::Candle => {
+                Some(super::candle::CandleTcn::load(&checkpoint, summary_dim)?)
+            }
             NeuralInference::Native => None,
         };
         #[cfg(not(feature = "candle"))]

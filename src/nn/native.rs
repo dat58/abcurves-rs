@@ -1,5 +1,5 @@
-use super::activation::{silu_exact, silu_pade9};
 use super::activation::{sigmoid_pade9, tanh_pade9};
+use super::activation::{silu_exact, silu_pade9};
 use super::linear::{accumulate_outer, add_bias_rows, matmul, matvec};
 use crate::continuous::constants::*;
 use crate::error::{Error, Result};
@@ -232,7 +232,14 @@ impl NativeEngine {
         let weights = &self.motor;
         let space = &mut self.motor_workspace;
 
-        matmul(coarse, TOKENS, 9, &weights.input_weight, HIDDEN, &mut space.tokens);
+        matmul(
+            coarse,
+            TOKENS,
+            9,
+            &weights.input_weight,
+            HIDDEN,
+            &mut space.tokens,
+        );
         silu_rows(&mut space.tokens, &weights.input_bias, HIDDEN);
         matmul(
             &space.tokens,
@@ -284,11 +291,24 @@ impl NativeEngine {
         let weights = &self.heads;
         let space = &mut self.head_workspace;
 
-        matvec(&weights.unary_latent, 64, HIDDEN, &self.encoded, &mut space.shared);
+        matvec(
+            &weights.unary_latent,
+            64,
+            HIDDEN,
+            &self.encoded,
+            &mut space.shared,
+        );
         for column in 0..64 {
             space.shared[column] += weights.unary_bias[column];
         }
-        matmul(geometry, HEADS, 16, &weights.unary_geometry, 64, &mut space.unary);
+        matmul(
+            geometry,
+            HEADS,
+            16,
+            &weights.unary_geometry,
+            64,
+            &mut space.unary,
+        );
         for row in 0..HEADS {
             for column in 0..64 {
                 let value = space.shared[column] + space.unary[row * 64 + column];
@@ -325,7 +345,14 @@ impl NativeEngine {
             for column in 0..32 {
                 space.shared_pair[column] += weights.pair_bias[column];
             }
-            matmul(pairs, HEADS, PAIR_LEN, &weights.pair_geometry, 32, &mut space.pair);
+            matmul(
+                pairs,
+                HEADS,
+                PAIR_LEN,
+                &weights.pair_geometry,
+                32,
+                &mut space.pair,
+            );
             for row in 0..HEADS {
                 for column in 0..32 {
                     let value = space.shared_pair[column] + space.pair[row * 32 + column];
@@ -346,11 +373,23 @@ impl NativeEngine {
     pub fn hazard(&mut self, context: &[f32], out: &mut [f32; 2]) {
         let weights = &self.heads;
         let space = &mut self.head_workspace;
-        matvec(&weights.hazard[0].0, 64, EVENT_CONTEXT_LEN, context, &mut space.first);
+        matvec(
+            &weights.hazard[0].0,
+            64,
+            EVENT_CONTEXT_LEN,
+            context,
+            &mut space.first,
+        );
         for column in 0..64 {
             space.first[column] = silu_exact(space.first[column] + weights.hazard[0].1[column]);
         }
-        matvec(&weights.hazard[1].0, 32, 64, &space.first, &mut space.second);
+        matvec(
+            &weights.hazard[1].0,
+            32,
+            64,
+            &space.first,
+            &mut space.second,
+        );
         for column in 0..32 {
             space.second[column] = silu_exact(space.second[column] + weights.hazard[1].1[column]);
         }
@@ -444,9 +483,8 @@ fn gru_gates(projected: &[f32], recurrent: &[f32], hidden: &mut [f32]) {
     for column in 0..HIDDEN {
         let reset = sigmoid_pade9(projected[column] + recurrent[column]);
         let update = sigmoid_pade9(projected[HIDDEN + column] + recurrent[HIDDEN + column]);
-        let candidate = tanh_pade9(
-            projected[2 * HIDDEN + column] + reset * recurrent[2 * HIDDEN + column],
-        );
+        let candidate =
+            tanh_pade9(projected[2 * HIDDEN + column] + reset * recurrent[2 * HIDDEN + column]);
         hidden[column] = candidate + (hidden[column] - candidate) * update;
     }
 }

@@ -30,7 +30,11 @@ impl Checkpoint {
             }
         }
         let root = pickle::load(archive.read(&pickle_name)?)?;
-        Ok(Self { archive, prefix, root })
+        Ok(Self {
+            archive,
+            prefix,
+            root,
+        })
     }
 
     pub fn root(&self) -> &Value {
@@ -78,7 +82,10 @@ impl Checkpoint {
     pub fn f32(&self, path: &[&str]) -> Result<Vec<f32>> {
         let array = self.array(path)?;
         if array.dtype != DType::F32 {
-            return Err(Error::Format(format!("{path:?} is {:?}, not float32", array.dtype)));
+            return Err(Error::Format(format!(
+                "{path:?} is {:?}, not float32",
+                array.dtype
+            )));
         }
         array.to_f32()
     }

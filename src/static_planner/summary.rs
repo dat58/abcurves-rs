@@ -262,6 +262,8 @@ pub fn raw_summary62(
                     let uy = f64::from(prefix[index][1] / magnitude);
                     if previous_valid {
                         direction_denominator += 1;
+                        // The reference threshold is this literal, not 1/sqrt(2).
+                        #[allow(clippy::approx_constant)]
                         if previous_ux * ux + previous_uy * uy < 0.7071 {
                             direction_changes += 1;
                         }
@@ -384,7 +386,11 @@ pub fn raw_summary62(
     out[14] = toward_y;
     out[15] = f64::from(progress_f32);
     out[16] = f64::from(inside32);
-    out[17] = if distance_over_radius <= 2.0 || inside32 > 0.5 { 1.0 } else { 0.0 };
+    out[17] = if distance_over_radius <= 2.0 || inside32 > 0.5 {
+        1.0
+    } else {
+        0.0
+    };
     out[18] = crossed;
     out[19] = overshot;
     out[20] = min_prefix_distance / radius;
@@ -409,14 +415,22 @@ pub fn raw_summary62(
     out[39] = accel_lateral;
     out[40] = recent_speed_slope;
     out[41] = recent_accel_slope;
-    out[42] = if recent_speed_slope < -0.03 || accel_at_b < -0.03 { 1.0 } else { 0.0 };
+    out[42] = if recent_speed_slope < -0.03 || accel_at_b < -0.03 {
+        1.0
+    } else {
+        0.0
+    };
     out[43] = speed_drop_recent;
     out[44] = jerk;
     out[45] = (speed_at_b - mean_speed).abs();
     out[46] = f64::from(recent_zero32);
     out[47] = f64::from(recent_sign_flip32);
     out[48] = f64::from(recent_direction_change32);
-    out[49] = if speed_at_b > 0.5 || recent_mean > 0.5 { 1.0 } else { 0.0 };
+    out[49] = if speed_at_b > 0.5 || recent_mean > 0.5 {
+        1.0
+    } else {
+        0.0
+    };
     out[50] = if distance_over_radius <= 1.5 && speed_at_b < 1.0f64.max(mean_speed * 0.5) {
         1.0
     } else {
@@ -551,7 +565,11 @@ impl SummaryNormalizer {
                 value = 0.0;
             }
             let normalized = (value - self.mean[slot]) / self.std[slot];
-            out[slot] = if normalized.is_finite() { normalized } else { 0.0 };
+            out[slot] = if normalized.is_finite() {
+                normalized
+            } else {
+                0.0
+            };
         }
     }
 }

@@ -217,15 +217,30 @@ impl FixedModel {
         };
         Ok(Self {
             weights: section(0).iter().map(|&byte| byte as i8).collect(),
-            biases: section(1).chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).collect(),
+            biases: section(1)
+                .chunks_exact(4)
+                .map(|c| i32::from_le_bytes(c.try_into().unwrap()))
+                .collect(),
             multipliers: section(2)
                 .chunks_exact(4)
                 .map(|c| i32::from_le_bytes(c.try_into().unwrap()))
                 .collect(),
-            sigmoid: section(3).chunks_exact(2).map(|c| u16::from_le_bytes(c.try_into().unwrap())).collect(),
-            tanh: section(4).chunks_exact(2).map(|c| i16::from_le_bytes(c.try_into().unwrap())).collect(),
-            exp: section(5).chunks_exact(4).map(|c| u32::from_le_bytes(c.try_into().unwrap())).collect(),
-            log: section(6).chunks_exact(2).map(|c| i16::from_le_bytes(c.try_into().unwrap())).collect(),
+            sigmoid: section(3)
+                .chunks_exact(2)
+                .map(|c| u16::from_le_bytes(c.try_into().unwrap()))
+                .collect(),
+            tanh: section(4)
+                .chunks_exact(2)
+                .map(|c| i16::from_le_bytes(c.try_into().unwrap()))
+                .collect(),
+            exp: section(5)
+                .chunks_exact(4)
+                .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+                .collect(),
+            log: section(6)
+                .chunks_exact(2)
+                .map(|c| i16::from_le_bytes(c.try_into().unwrap()))
+                .collect(),
             config,
             body_crc32: crc,
         })
@@ -248,10 +263,14 @@ impl Adapter {
         }
         let mut at = ADAPTER_HEADER_BYTES;
         let halves = |blob: &[u8], at: usize, count: usize| -> Vec<f32> {
-            (0..count).map(|index| f16_le(blob, at + 2 * index)).collect()
+            (0..count)
+                .map(|index| f16_le(blob, at + 2 * index))
+                .collect()
         };
         let floats = |blob: &[u8], at: usize, count: usize| -> Vec<f32> {
-            (0..count).map(|index| f32_le(blob, at + 4 * index)).collect()
+            (0..count)
+                .map(|index| f32_le(blob, at + 4 * index))
+                .collect()
         };
         let mean = halves(blob, at, ADAPTER_INPUT);
         at += ADAPTER_INPUT * 2;

@@ -1,3 +1,5 @@
+#![allow(clippy::needless_range_loop)]
+
 mod common;
 
 use abcurves::continuous::{ContinuousPipeline, CountTransform, PipelineOptions, prepare_history};
@@ -23,13 +25,24 @@ fn human_fixture() -> (Vec<[i16; 2]>, f64, [f64; 2], [f64; 2], Vec<[f64; 2]>) {
     )
 }
 
-fn compare(label: &str, prefix: &str, time: &[i64], xy: &[[f64; 2]], reports: &[[i16; 2]], rendered: &[[f64; 2]]) {
+fn compare(
+    label: &str,
+    prefix: &str,
+    time: &[i64],
+    xy: &[[f64; 2]],
+    reports: &[[i16; 2]],
+    rendered: &[[f64; 2]],
+) {
     let expected_time = read_i64(FIXTURE, &format!("{prefix}_time"));
     let expected_xy = read_f64(FIXTURE, &format!("{prefix}_xy"));
     let expected_reports = read_i16(FIXTURE, &format!("{prefix}_reports"));
     let expected_rendered = read_f64(FIXTURE, &format!("{prefix}_rendered"));
     assert_eq!(time, expected_time, "{label} times");
-    assert_eq!(reports.len() * 2, expected_reports.len(), "{label} report count");
+    assert_eq!(
+        reports.len() * 2,
+        expected_reports.len(),
+        "{label} report count"
+    );
     for (step, report) in reports.iter().enumerate() {
         assert_eq!(
             *report,
@@ -42,13 +55,16 @@ fn compare(label: &str, prefix: &str, time: &[i64], xy: &[[f64; 2]], reports: &[
     for step in 0..xy.len() {
         for axis in 0..2 {
             worst_plan = worst_plan.max((xy[step][axis] - expected_xy[step * 2 + axis]).abs());
-            worst_rendered =
-                worst_rendered.max((rendered[step][axis] - expected_rendered[step * 2 + axis]).abs());
+            worst_rendered = worst_rendered
+                .max((rendered[step][axis] - expected_rendered[step * 2 + axis]).abs());
         }
     }
     eprintln!("{label}: plan gap {worst_plan:e}, rendered gap {worst_rendered:e}");
     assert!(worst_plan < 1.5e-3, "{label} plan gap {worst_plan:e}");
-    assert!(worst_rendered < 1e-9, "{label} rendered gap {worst_rendered:e}");
+    assert!(
+        worst_rendered < 1e-9,
+        "{label} rendered gap {worst_rendered:e}"
+    );
 }
 
 #[test]

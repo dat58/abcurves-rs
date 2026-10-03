@@ -1,4 +1,6 @@
-use abcurves::continuous::{ContinuousOptions, ContinuousPipeline, CountTransform, PipelineOptions};
+use abcurves::continuous::{
+    ContinuousOptions, ContinuousPipeline, CountTransform, PipelineOptions,
+};
 use abcurves::renderer::{RendererModel, RendererProfile};
 use abcurves::static_planner::StaticPipeline;
 use std::path::{Path, PathBuf};
@@ -200,7 +202,10 @@ fn static_planner(root: &Path) {
     let mut complete = Samples::new("Static complete handoff through last report");
 
     let mut pipeline = StaticPipeline::from_pretrained(7, Some(root), true).unwrap();
-    let profile_window: Vec<[i16; 2]> = profiles[..512].chunks_exact(2).map(|p| [p[0], p[1]]).collect();
+    let profile_window: Vec<[i16; 2]> = profiles[..512]
+        .chunks_exact(2)
+        .map(|p| [p[0], p[1]])
+        .collect();
     for _ in 0..20 {
         let start = Instant::now();
         let profile = pipeline.prepare_renderer_profile(&profile_window).unwrap();
@@ -223,7 +228,14 @@ fn static_planner(root: &Path) {
                 let start = Instant::now();
                 let intent = pipeline
                     .planner_mut()
-                    .plan(&prefix, target, radii[index], progresses[index], 0, Some(head))
+                    .plan(
+                        &prefix,
+                        target,
+                        radii[index],
+                        progresses[index],
+                        0,
+                        Some(head),
+                    )
                     .unwrap();
                 plan.push(start.elapsed().as_nanos());
 

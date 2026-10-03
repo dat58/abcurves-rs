@@ -138,7 +138,13 @@ impl Planner {
         self.mode.unwrap_or(MODE_HOLD)
     }
 
-    fn initialize(&mut self, history: &[[f64; 2]], position: [f64; 2], goal: [f64; 2], now_us: i64) {
+    fn initialize(
+        &mut self,
+        history: &[[f64; 2]],
+        position: [f64; 2],
+        goal: [f64; 2],
+        now_us: i64,
+    ) {
         let still = history[HISTORY_SAMPLES - COMMIT_SAMPLES..]
             .iter()
             .flat_map(|row| row.iter())
@@ -217,7 +223,11 @@ impl Planner {
         );
     }
 
-    pub fn plan(&mut self, window: &Window<'_>, now_us: i64) -> Result<&[[f64; 2]; COMMIT_SAMPLES]> {
+    pub fn plan(
+        &mut self,
+        window: &Window<'_>,
+        now_us: i64,
+    ) -> Result<&[[f64; 2]; COMMIT_SAMPLES]> {
         let last = HISTORY_SAMPLES - 1;
         let known = window.valid[last] && window.available[last] <= now_us;
         let goal = if known {
@@ -280,7 +290,8 @@ impl Planner {
         let mut hazard = [0.0f32; 2];
         let mut have_hazard = false;
         if full_events {
-            self.engine.events(&self.events.context, &mut self.outputs)?;
+            self.engine
+                .events(&self.events.context, &mut self.outputs)?;
             hazard = self.outputs.hazard;
             have_hazard = true;
         } else if need_hazard {
@@ -374,7 +385,9 @@ impl Planner {
 
         match self.mode.unwrap() {
             MODE_BRAKE => {
-                let times: Vec<f64> = (0..=COMMIT_SAMPLES).map(|step| self.age + step as f64).collect();
+                let times: Vec<f64> = (0..=COMMIT_SAMPLES)
+                    .map(|step| self.age + step as f64)
+                    .collect();
                 kernels::c2_path(
                     self.brake_velocity,
                     self.brake_acceleration,
@@ -395,10 +408,8 @@ impl Planner {
                 if self.age >= self.duration {
                     self.mode = Some(MODE_HOLD);
                     self.age = (self.age - self.duration).max(0.0);
-                    self.hold_position = [
-                        window.position[0] + total[0],
-                        window.position[1] + total[1],
-                    ];
+                    self.hold_position =
+                        [window.position[0] + total[0], window.position[1] + total[1]];
                     self.hold_goal = goal;
                     self.hold_error = norm(
                         goal[0] - self.hold_position[0],

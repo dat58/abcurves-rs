@@ -112,7 +112,8 @@ pub fn forward(
             );
             for row in low..WINDOW {
                 for column in 0..CHANNELS {
-                    space.y[row * CHANNELS + column] = space.staged[(row - low) * CHANNELS + column]
+                    space.y[row * CHANNELS + column] = space.staged
+                        [(row - low) * CHANNELS + column]
                         + weights.conv_bias[index * CHANNELS + column];
                 }
                 let lane = &mut space.y[row * CHANNELS..(row + 1) * CHANNELS];

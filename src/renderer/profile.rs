@@ -31,7 +31,9 @@ fn q16_from_double(value: f64) -> i32 {
 
 fn q15_from_float(value: f32) -> i16 {
     let clipped = f64::from(value).clamp(-1.0, 1.0);
-    (clipped * 32768.0).round_ties_even().clamp(-32767.0, 32767.0) as i16
+    (clipped * 32768.0)
+        .round_ties_even()
+        .clamp(-32767.0, 32767.0) as i16
 }
 
 pub fn q16_pair(displacement: [f32; 2]) -> Result<[i32; 2]> {
@@ -95,11 +97,16 @@ impl CoreState {
         feature: &mut [i16; CORE_FEATURES],
     ) {
         let speed = (smooth[0] * smooth[0] + smooth[1] * smooth[1]).sqrt();
-        let accel = if logical_tick == 0 { 0.0 } else { speed - self.previous_speed };
+        let accel = if logical_tick == 0 {
+            0.0
+        } else {
+            speed - self.previous_speed
+        };
         let mut curvature = 0.0;
         let active = u8::from(raw_x != 0 || raw_y != 0);
         if logical_tick > 0 && self.previous_speed > 1.0e-9 && speed > 1.0e-9 {
-            let cosine = (self.previous_smooth[0] * smooth[0] + self.previous_smooth[1] * smooth[1])
+            let cosine = (self.previous_smooth[0] * smooth[0]
+                + self.previous_smooth[1] * smooth[1])
                 / (self.previous_speed * speed);
             curvature = 1.0 - cosine.clamp(-1.0, 1.0);
         }
@@ -227,7 +234,10 @@ fn adapter_predict(adapter: &Adapter, input: &[f32; ADAPTER_INPUT]) -> [f32; HID
             adapter.u_scale[row],
             &rank,
         );
-        sum = input[row] + sum;
+        #[allow(clippy::assign_op_pattern)]
+        {
+            sum = input[row] + sum;
+        }
         sum += adapter.u_bias[row];
         output[row] = sum;
     }
@@ -437,19 +447,23 @@ impl Observer {
             let logical = tick - 4;
             let raw = self.fixed.prefix_raw[usize::from(logical)];
             let mut core = [0i16; CORE_FEATURES];
-            self.observer_core.build(logical, raw[0], raw[1], smooth, &mut core);
+            self.observer_core
+                .build(logical, raw[0], raw[1], smooth, &mut core);
             feature[..CORE_FEATURES].copy_from_slice(&core);
         }
         if tick >= 128 {
-            if let Some(smooth) = self.target_smoother.push_delta(f64::from(dx), f64::from(dy)) {
+            if let Some(smooth) = self
+                .target_smoother
+                .push_delta(f64::from(dx), f64::from(dy))
+            {
                 let logical = tick - 128 - 4;
                 let raw = self.fixed.prefix_raw[usize::from(128 + logical)];
                 let mut discarded = [0i16; CORE_FEATURES];
-                self.target_core.build(logical, raw[0], raw[1], smooth, &mut discarded);
+                self.target_core
+                    .build(logical, raw[0], raw[1], smooth, &mut discarded);
             }
             if tick >= 196 {
-                self.canonical_active_tail[usize::from(tick - 196)] =
-                    u8::from(dx != 0 || dy != 0);
+                self.canonical_active_tail[usize::from(tick - 196)] = u8::from(dx != 0 || dy != 0);
             }
         }
         feature[CORE_FEATURES..].copy_from_slice(&summary);
@@ -471,7 +485,8 @@ impl Observer {
             let logical = 124 + index as u16;
             let raw = self.fixed.prefix_raw[usize::from(128 + logical)];
             let mut core = [0i16; CORE_FEATURES];
-            self.target_core.build(logical, raw[0], raw[1], tail[index], &mut core);
+            self.target_core
+                .build(logical, raw[0], raw[1], tail[index], &mut core);
             self.target_tail4_core_q8[index] = core;
         }
         let mut boundary = Boundary {

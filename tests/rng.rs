@@ -1,3 +1,5 @@
+#![allow(clippy::needless_range_loop)]
+
 mod common;
 
 use abcurves::rng::{Pcg64, RandomStream, head_from_seed, softmax};
@@ -19,8 +21,14 @@ fn stream_matches_reference_draws() {
     for (index, &seed) in seeds.iter().enumerate() {
         let mut stream = RandomStream::new(seed);
         assert_eq!(stream.uniform(1), uniform_a[index..index + 1]);
-        assert_eq!(stream.exponential(16), exponential_a[index * 16..(index + 1) * 16]);
-        assert_eq!(stream.uniform(1027), uniform_b[index * 1027..(index + 1) * 1027]);
+        assert_eq!(
+            stream.exponential(16),
+            exponential_a[index * 16..(index + 1) * 16]
+        );
+        assert_eq!(
+            stream.uniform(1027),
+            uniform_b[index * 1027..(index + 1) * 1027]
+        );
         for step in 0..48 {
             let position = index * 48 + step;
             let weights = softmax(&logits[position * 16..(position + 1) * 16]).unwrap();
@@ -30,8 +38,14 @@ fn stream_matches_reference_draws() {
                 assert_eq!(stream.categorical(&weights) as i64, categories[position]);
             }
         }
-        assert_eq!(stream.exponential(300), exponential_b[index * 300..(index + 1) * 300]);
-        assert_eq!(stream.uniform(129), uniform_c[index * 129..(index + 1) * 129]);
+        assert_eq!(
+            stream.exponential(300),
+            exponential_b[index * 300..(index + 1) * 300]
+        );
+        assert_eq!(
+            stream.uniform(129),
+            uniform_c[index * 129..(index + 1) * 129]
+        );
     }
 }
 
@@ -44,8 +58,7 @@ fn softmax_tracks_reference_within_a_few_units_in_last_place() {
         let actual = softmax(&logits[chunk * 16..(chunk + 1) * 16]).unwrap();
         for lane in 0..16 {
             let expected = probabilities[chunk * 16 + lane];
-            let distance =
-                (actual[lane].to_bits() as i64 - expected.to_bits() as i64).abs();
+            let distance = (actual[lane].to_bits() as i64 - expected.to_bits() as i64).abs();
             worst = worst.max(distance);
         }
     }
@@ -68,7 +81,11 @@ fn pcg64_matches_numpy_default_generator() {
         assert_eq!(head_from_seed(seed, 16) as i64, heads[index], "seed {seed}");
         let mut generator = Pcg64::from_seed(seed);
         for step in 0..16 {
-            assert_eq!(generator.next_u64(), words[index * 16 + step], "seed {seed} step {step}");
+            assert_eq!(
+                generator.next_u64(),
+                words[index * 16 + step],
+                "seed {seed} step {step}"
+            );
         }
     }
 }

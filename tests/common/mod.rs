@@ -86,10 +86,7 @@ pub fn build_case(seed: u32) -> Case {
     let mut history = Vec::with_capacity(640);
     let mut target = Vec::with_capacity(640);
     for index in 0..640 {
-        history.push([
-            (u[index * 2] - 0.5) * 8.0,
-            (u[index * 2 + 1] - 0.5) * 8.0,
-        ]);
+        history.push([(u[index * 2] - 0.5) * 8.0, (u[index * 2 + 1] - 0.5) * 8.0]);
         target.push([
             (u[1280 + index * 2] - 0.5) * 300.0,
             (u[1280 + index * 2 + 1] - 0.5) * 300.0,
@@ -139,14 +136,18 @@ pub fn build_case(seed: u32) -> Case {
         brake_acceleration: [(u[4492] - 0.5) * 0.5, (u[4493] - 0.5) * 0.5],
         brake_duration: 4.0 + u[4494] * 188.0,
         brake_age: u[4495] * 200.0,
-        coefficients: (0..672).map(|index| ((u[4608 + index] - 0.5) * 2.0) as f32).collect(),
+        coefficients: (0..672)
+            .map(|index| ((u[4608 + index] - 0.5) * 2.0) as f32)
+            .collect(),
         brake_coefficients: std::array::from_fn(|row| {
             [
                 (u[5280 + row * 2] - 0.5) * 40.0,
                 (u[5280 + row * 2 + 1] - 0.5) * 40.0,
             ]
         }),
-        previous: (0..32).map(|index| ((u[5290 + index] - 0.5) * 4.0) as f32).collect(),
+        previous: (0..32)
+            .map(|index| ((u[5290 + index] - 0.5) * 4.0) as f32)
+            .collect(),
     }
 }
 

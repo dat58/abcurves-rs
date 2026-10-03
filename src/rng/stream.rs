@@ -98,6 +98,8 @@ fn race(weights: &[f32], draws: &[f32]) -> usize {
     }
     for position in 1..weights.len() {
         let score = weights[position] / draws[position];
+        // A nonfinite score wins here exactly as it does in the reference argmax.
+        #[allow(clippy::neg_cmp_op_on_partial_ord)]
         if !(score <= best) {
             best = score;
             index = position;
@@ -129,8 +131,8 @@ pub fn pairwise_sum(values: &[f32]) -> f32 {
             }
             index += 8;
         }
-        let mut total =
-            ((lanes[0] + lanes[1]) + (lanes[2] + lanes[3])) + ((lanes[4] + lanes[5]) + (lanes[6] + lanes[7]));
+        let mut total = ((lanes[0] + lanes[1]) + (lanes[2] + lanes[3]))
+            + ((lanes[4] + lanes[5]) + (lanes[6] + lanes[7]));
         while index < n {
             total += values[index];
             index += 1;

@@ -1,3 +1,5 @@
+#![allow(clippy::needless_range_loop)]
+
 mod common;
 
 use abcurves::static_planner::{BEvent, BTrigger, StaticPipeline};
@@ -167,7 +169,10 @@ fn onset_detector_matches_the_reference() {
         match fired {
             None => assert_eq!(expected_index, -1, "event {event_index} onset"),
             Some(event) => {
-                assert_eq!(event.index as i64, expected_index, "event {event_index} onset index");
+                assert_eq!(
+                    event.index as i64, expected_index,
+                    "event {event_index} onset index"
+                );
                 assert_eq!(event.threshold, stats[0], "event {event_index} threshold");
                 assert_eq!(event.speed_median, stats[1], "event {event_index} median");
                 assert_eq!(event.speed_mad, stats[2], "event {event_index} mad");

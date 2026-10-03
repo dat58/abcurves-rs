@@ -59,8 +59,7 @@ pub fn matmul(
         while column + COLUMN_TILE <= columns {
             let mut lanes = [[0.0f32; COLUMN_TILE]; ROW_TILE];
             for step in 0..inner {
-                let source =
-                    &right[step * columns + column..step * columns + column + COLUMN_TILE];
+                let source = &right[step * columns + column..step * columns + column + COLUMN_TILE];
                 for inside in 0..block {
                     let scale = left[(row + inside) * inner + step];
                     let target = &mut lanes[inside];

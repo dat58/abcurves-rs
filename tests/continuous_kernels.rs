@@ -1,10 +1,10 @@
+#![allow(clippy::needless_range_loop)]
+
 mod common;
 
-use abcurves::continuous::kernels::{
-    self, EventFeatures, EventState, MotorFeatures, Window,
-};
+use abcurves::continuous::kernels::{self, EventFeatures, EventState, MotorFeatures, Window};
 use abcurves::io::Npz;
-use common::{CASES, CASE_CUT_US, build_case, models_root, read_f32, read_f64};
+use common::{CASE_CUT_US, CASES, build_case, models_root, read_f32, read_f64};
 
 const FIXTURE: &str = "continuous_kernels";
 
@@ -76,9 +76,21 @@ fn physical_kernels_match_the_numba_reference() {
 
         let mut motor = MotorFeatures::default();
         kernels::motor_features(&window, &mut motor);
-        same_f32(&motor.coarse, slice_f32(&coarse, case, 630), &format!("coarse {case}"));
-        same_f32(&motor.fine, slice_f32(&fine, case, 54), &format!("fine {case}"));
-        same_f32(&motor.dynamics, slice_f32(&dynamics, case, 8), &format!("dynamics {case}"));
+        same_f32(
+            &motor.coarse,
+            slice_f32(&coarse, case, 630),
+            &format!("coarse {case}"),
+        );
+        same_f32(
+            &motor.fine,
+            slice_f32(&fine, case, 54),
+            &format!("fine {case}"),
+        );
+        same_f32(
+            &motor.dynamics,
+            slice_f32(&dynamics, case, 8),
+            &format!("dynamics {case}"),
+        );
 
         let state = EventState {
             hold_age: built.hold_age,
@@ -90,8 +102,16 @@ fn physical_kernels_match_the_numba_reference() {
         };
         let mut events = EventFeatures::default();
         kernels::event_features(&window, &state, &mut events);
-        same_f32(&events.raw, slice_f32(&raw, case, 22), &format!("raw {case}"));
-        same_f32(&events.context, slice_f32(&context, case, 32), &format!("context {case}"));
+        same_f32(
+            &events.raw,
+            slice_f32(&raw, case, 22),
+            &format!("raw {case}"),
+        );
+        same_f32(
+            &events.context,
+            slice_f32(&context, case, 32),
+            &format!("context {case}"),
+        );
         let flat = [
             events.basis[0][0],
             events.basis[0][1],
@@ -109,7 +129,11 @@ fn physical_kernels_match_the_numba_reference() {
             &mean_carry,
             &mut head_geometry,
         );
-        same_f32(&head_geometry, slice_f32(&heads, case, 512), &format!("heads {case}"));
+        same_f32(
+            &head_geometry,
+            slice_f32(&heads, case, 512),
+            &format!("heads {case}"),
+        );
 
         let mut unary = vec![0.0f32; 16 * 16];
         let mut pair = vec![0.0f32; 16 * 20];
@@ -119,8 +143,16 @@ fn physical_kernels_match_the_numba_reference() {
             None
         };
         kernels::selector_inputs(&head_geometry, previous, &mut unary, &mut pair);
-        same_f32(&unary, slice_f32(&geometry, case, 256), &format!("geometry {case}"));
-        same_f32(&pair, slice_f32(&pairs, case, 320), &format!("pairs {case}"));
+        same_f32(
+            &unary,
+            slice_f32(&geometry, case, 256),
+            &format!("geometry {case}"),
+        );
+        same_f32(
+            &pair,
+            slice_f32(&pairs, case, 320),
+            &format!("pairs {case}"),
+        );
 
         let head = case % 16;
         let mut action = vec![[0.0f64; 2]; 32];

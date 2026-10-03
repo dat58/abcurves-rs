@@ -1,9 +1,13 @@
+#![allow(clippy::needless_range_loop)]
+
 mod common;
 
 use abcurves::continuous::kernels::{self, EventFeatures, EventState, MotorFeatures, Window};
 use abcurves::io::Npz;
 use abcurves::nn::{EventOutputs, NativeEngine};
-use common::{CASES, CASE_CUT_US, build_case, build_encoded, models_root, read_f32, relative_drift};
+use common::{
+    CASE_CUT_US, CASES, build_case, build_encoded, models_root, read_f32, relative_drift,
+};
 
 const FIXTURE: &str = "continuous_neural";
 
@@ -54,8 +58,11 @@ fn neural_kernels_track_the_native_reference() {
             continue;
         }
         engine.motor(&motor.coarse, &motor.fine, &motor.dynamics);
-        worst_encoded =
-            worst_encoded.max(relative_drift(&engine.encoded, part(&encoded, case, 96), "encoded"));
+        worst_encoded = worst_encoded.max(relative_drift(
+            &engine.encoded,
+            part(&encoded, case, 96),
+            "encoded",
+        ));
         worst_coefficients = worst_coefficients.max(relative_drift(
             &engine.coefficients,
             part(&coefficients, case, 672),
@@ -75,14 +82,26 @@ fn neural_kernels_track_the_native_reference() {
         let mut outputs = EventOutputs::default();
         engine.events(&events.context, &mut outputs);
         worst_events = worst_events
-            .max(relative_drift(&outputs.duration, part(&duration, case, 16), "duration"))
+            .max(relative_drift(
+                &outputs.duration,
+                part(&duration, case, 16),
+                "duration",
+            ))
             .max(relative_drift(
                 &outputs.coefficients,
                 part(&brake_coefficients, case, 160),
                 "brake coefficients",
             ))
-            .max(relative_drift(&outputs.frequency, part(&frequency, case, 16), "frequency"))
-            .max(relative_drift(&outputs.hazard, part(&hazard, case, 2), "hazard"));
+            .max(relative_drift(
+                &outputs.frequency,
+                part(&frequency, case, 16),
+                "frequency",
+            ))
+            .max(relative_drift(
+                &outputs.hazard,
+                part(&hazard, case, 2),
+                "hazard",
+            ));
 
         let mut head_geometry = vec![0.0f32; 16 * 16 * 2];
         kernels::decode_geometry(
@@ -102,8 +121,11 @@ fn neural_kernels_track_the_native_reference() {
         kernels::selector_inputs(&head_geometry, previous, &mut geometry, &mut pairs);
         engine.encoded.copy_from_slice(&build_encoded(case as u32));
         engine.choice(&geometry, &pairs, previous.is_some());
-        worst_logits =
-            worst_logits.max(relative_drift(&engine.logits, part(&logits, case, 16), "logits"));
+        worst_logits = worst_logits.max(relative_drift(
+            &engine.logits,
+            part(&logits, case, 16),
+            "logits",
+        ));
     }
 
     eprintln!(
@@ -111,7 +133,10 @@ fn neural_kernels_track_the_native_reference() {
          logits {worst_logits:e}, events {worst_events:e}"
     );
     assert!(worst_encoded < 1e-5, "encoded drifted {worst_encoded:e}");
-    assert!(worst_coefficients < 1e-5, "coefficients drifted {worst_coefficients:e}");
+    assert!(
+        worst_coefficients < 1e-5,
+        "coefficients drifted {worst_coefficients:e}"
+    );
     assert!(worst_logits < 1e-5, "logits drifted {worst_logits:e}");
     assert!(worst_events < 1e-5, "event heads drifted {worst_events:e}");
 }

@@ -243,7 +243,9 @@ impl ContinuousPipeline {
 
     pub fn update_target(&mut self, xy: [f64; 2], timestamp_us: i64) -> Result<()> {
         if self.failed {
-            return Err(Error::Mode("Pipeline failed; reset before updating targets".into()));
+            return Err(Error::Mode(
+                "Pipeline failed; reset before updating targets".into(),
+            ));
         }
         self.movement.update_target(xy, timestamp_us)
     }

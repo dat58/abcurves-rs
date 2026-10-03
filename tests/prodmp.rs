@@ -1,3 +1,5 @@
+#![allow(clippy::needless_range_loop)]
+
 mod common;
 
 use abcurves::static_planner::{ComponentCache, ProDMPConfig};
@@ -16,10 +18,7 @@ fn weights_and_velocity(count: usize) -> (Vec<Vec<f64>>, Vec<[f64; 2]>) {
                 .map(|slot| (u[base + slot] - 0.5) * 2.0e4)
                 .collect::<Vec<f64>>(),
         );
-        velocity.push([
-            (u[base + 42] - 0.5) * 40.0,
-            (u[base + 43] - 0.5) * 40.0,
-        ]);
+        velocity.push([(u[base + 42] - 0.5) * 40.0, (u[base + 43] - 0.5) * 40.0]);
     }
     (weights, velocity)
 }
@@ -37,7 +36,11 @@ fn basis_and_decoder_match_the_reference() {
     let mut worst_basis = 0.0f64;
     for (sample, &expected_s) in s_grid.iter().enumerate() {
         let grid = sample * 10;
-        assert_eq!(cache.prodmp().s_grid_value(grid), expected_s, "s grid {grid}");
+        assert_eq!(
+            cache.prodmp().s_grid_value(grid),
+            expected_s,
+            "s grid {grid}"
+        );
         for index in 0..weights {
             let phi = cache.prodmp().phi_grid()[grid * weights + index];
             let dphi = cache.prodmp().dphi_grid()[grid * weights + index];

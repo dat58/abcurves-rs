@@ -83,7 +83,12 @@ impl OnsetDetector {
     }
 
     /// Consume one closed 1 ms bin; return A once, then remain latched.
-    pub fn push(&mut self, dx: f64, dy: f64, target_rel: Option<[f64; 2]>) -> Result<Option<OnsetEvent>> {
+    pub fn push(
+        &mut self,
+        dx: f64,
+        dy: f64,
+        target_rel: Option<[f64; 2]>,
+    ) -> Result<Option<OnsetEvent>> {
         if self.done {
             return Ok(None);
         }
@@ -269,12 +274,17 @@ impl BTrigger {
             ));
         }
         if !target_radius.is_finite() || target_radius <= 0.0 {
-            return Err(Error::InferenceContract("target_radius must be positive".into()));
+            return Err(Error::InferenceContract(
+                "target_radius must be positive".into(),
+            ));
         }
-        let distance =
-            (target_rel_at_a[0] * target_rel_at_a[0] + target_rel_at_a[1] * target_rel_at_a[1]).sqrt();
+        let distance = (target_rel_at_a[0] * target_rel_at_a[0]
+            + target_rel_at_a[1] * target_rel_at_a[1])
+            .sqrt();
         if distance <= target_radius {
-            return Err(Error::InferenceContract("A must begin outside the target".into()));
+            return Err(Error::InferenceContract(
+                "A must begin outside the target".into(),
+            ));
         }
         self.armed = true;
         self.movement = [0.0; 2];
@@ -290,16 +300,19 @@ impl BTrigger {
     }
 
     pub fn progress(&self, edge: bool) -> f64 {
-        let distance =
-            (self.target_at_a[0] * self.target_at_a[0] + self.target_at_a[1] * self.target_at_a[1])
-                .sqrt();
+        let distance = (self.target_at_a[0] * self.target_at_a[0]
+            + self.target_at_a[1] * self.target_at_a[1])
+            .sqrt();
         let mut denominator = distance;
         if edge {
             denominator -= self.radius_at_a.max(0.0);
         }
         denominator = denominator.max(1e-9);
         let unit = if distance > 1e-9 {
-            [self.target_at_a[0] / distance, self.target_at_a[1] / distance]
+            [
+                self.target_at_a[0] / distance,
+                self.target_at_a[1] / distance,
+            ]
         } else {
             [0.0, 0.0]
         };

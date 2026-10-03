@@ -141,8 +141,14 @@ impl ProDMP {
             }
         }
 
-        let ea: Vec<f64> = s_grid.iter().map(|value| (half_alpha * value).exp()).collect();
-        let em: Vec<f64> = s_grid.iter().map(|value| (-half_alpha * value).exp()).collect();
+        let ea: Vec<f64> = s_grid
+            .iter()
+            .map(|value| (half_alpha * value).exp())
+            .collect();
+        let em: Vec<f64> = s_grid
+            .iter()
+            .map(|value| (-half_alpha * value).exp())
+            .collect();
         let mut p1 = vec![0.0f64; points * n_basis];
         let mut p2 = vec![0.0f64; points * n_basis];
         for grid in 1..points {
@@ -166,8 +172,8 @@ impl ProDMP {
                 let at = grid * n_basis + index;
                 phi_grid[grid * n_weights + index] =
                     (s_grid[grid] * em[grid]) * p2[at] - em[grid] * p1[at];
-                dphi_grid[grid * n_weights + index] = em[grid]
-                    * (((1.0 - half_alpha * s_grid[grid]) * p2[at]) + half_alpha * p1[at]);
+                dphi_grid[grid * n_weights + index] =
+                    em[grid] * (((1.0 - half_alpha * s_grid[grid]) * p2[at]) + half_alpha * p1[at]);
             }
             phi_grid[grid * n_weights + n_basis] =
                 1.0 - em[grid] * (1.0 + half_alpha * s_grid[grid]);

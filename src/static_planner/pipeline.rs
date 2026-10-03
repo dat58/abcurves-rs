@@ -20,7 +20,11 @@ pub struct PreparedStream {
 }
 
 impl StaticPipeline {
-    pub fn from_pretrained(model_seed: u32, model_dir: Option<&Path>, prewarm: bool) -> Result<Self> {
+    pub fn from_pretrained(
+        model_seed: u32,
+        model_dir: Option<&Path>,
+        prewarm: bool,
+    ) -> Result<Self> {
         let files = model_store::resolve_model_files(model_seed, model_dir, true)?;
         let planner = FastPlanner::open(&files.planner, prewarm)?;
         let model = RendererModel::open(&files.renderer)?;

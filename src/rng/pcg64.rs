@@ -30,7 +30,9 @@ fn hashmix(value: u32, constant: &mut u32) -> u32 {
 }
 
 fn mix(x: u32, y: u32) -> u32 {
-    let result = MIX_MULT_L.wrapping_mul(x).wrapping_sub(MIX_MULT_R.wrapping_mul(y));
+    let result = MIX_MULT_L
+        .wrapping_mul(x)
+        .wrapping_sub(MIX_MULT_R.wrapping_mul(y));
     result ^ (result >> XSHIFT)
 }
 

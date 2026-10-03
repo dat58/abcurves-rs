@@ -94,7 +94,10 @@ fn normalize_q15(x_q16: i32, y_q16: i32) -> ([i16; 2], u32) {
     }
     let tx = round_div_even_i64(i64::from(x_q16) * 32767, u64::from(speed));
     let ty = round_div_even_i64(i64::from(y_q16) * 32767, u64::from(speed));
-    ([clamp_i16(tx, -32767, 32767), clamp_i16(ty, -32767, 32767)], speed)
+    (
+        [clamp_i16(tx, -32767, 32767), clamp_i16(ty, -32767, 32767)],
+        speed,
+    )
 }
 
 fn ratio_q15(numerator: i64, denominator: u64) -> i32 {
@@ -406,7 +409,11 @@ impl FixedRenderer {
         self.hidden = self.next_hidden;
     }
 
-    pub fn online_gru_step_q8(&mut self, model: &FixedModel, feature: &[i16; FEATURES]) -> Result<()> {
+    pub fn online_gru_step_q8(
+        &mut self,
+        model: &FixedModel,
+        feature: &[i16; FEATURES],
+    ) -> Result<()> {
         if self.mode != Mode::Observe {
             return Err(Error::Mode("renderer is not observing".into()));
         }
@@ -454,8 +461,8 @@ impl FixedRenderer {
         let active = u8::from(dx != 0 || dy != 0);
         if self.run_length == 0 || active != self.run_active {
             self.run_length = 1;
-        } else if self.run_length != u16::MAX {
-            self.run_length += 1;
+        } else {
+            self.run_length = self.run_length.saturating_add(1);
         }
         self.run_active = active;
         self.previous_emit = [dx, dy];
@@ -501,8 +508,7 @@ impl FixedRenderer {
                 dot_x + dot_y
             };
             let denominator = u64::from(self.previous_speed_q16) * u64::from(speed);
-            let cosine_q15 =
-                ratio_q15(dot, denominator).clamp(-(1 << TANGENT_Q), 1 << TANGENT_Q);
+            let cosine_q15 = ratio_q15(dot, denominator).clamp(-(1 << TANGENT_Q), 1 << TANGENT_Q);
             curvature_q8 = round_div_even_i64(
                 i64::from((1 << TANGENT_Q) - cosine_q15) << FEATURE_Q,
                 1u64 << TANGENT_Q,
@@ -513,7 +519,8 @@ impl FixedRenderer {
             + accumulator_q16[1] * i64::from(self.tangent_q15[1]);
         let normal_dot = accumulator_q16[0] * i64::from(normal_q15[0])
             + accumulator_q16[1] * i64::from(normal_q15[1]);
-        let previous_tangent_dot = i64::from(self.previous_emit[0]) * i64::from(self.tangent_q15[0])
+        let previous_tangent_dot = i64::from(self.previous_emit[0])
+            * i64::from(self.tangent_q15[0])
             + i64::from(self.previous_emit[1]) * i64::from(self.tangent_q15[1]);
         let previous_normal_dot = i64::from(self.previous_emit[0]) * i64::from(normal_q15[0])
             + i64::from(self.previous_emit[1]) * i64::from(normal_q15[1]);
@@ -708,8 +715,8 @@ impl FixedRenderer {
             let zero_debt = u64::from(model.config[CFG_ZERO_DEBT_Q16] as u32);
             let quiet = abs_u64(i64::from(smooth_dx_q16)) <= zero_intent
                 && abs_u64(i64::from(smooth_dy_q16)) <= zero_intent;
-            let low_debt = abs_u64(accumulator_q16[0]) < zero_debt
-                && abs_u64(accumulator_q16[1]) < zero_debt;
+            let low_debt =
+                abs_u64(accumulator_q16[0]) < zero_debt && abs_u64(accumulator_q16[1]) < zero_debt;
             if quiet && low_debt {
                 emit = false;
             }
@@ -734,7 +741,8 @@ impl FixedRenderer {
             if self.last_axis_nonzero[axis] != 0
                 && mark[axis] != 0
                 && sign_i32(i32::from(self.last_axis_nonzero[axis])) != sign_i32(mark[axis])
-                && abs_u64(accumulator_q16[axis]) < u64::from(model.config[CFG_HYSTERESIS_Q16] as u32)
+                && abs_u64(accumulator_q16[axis])
+                    < u64::from(model.config[CFG_HYSTERESIS_Q16] as u32)
             {
                 mark[axis] = 0;
             }
@@ -751,8 +759,13 @@ impl FixedRenderer {
             accumulator_q16[0] - i64::from(mark[0]) * (1i64 << SMOOTH_Q),
             accumulator_q16[1] - i64::from(mark[1]) * (1i64 << SMOOTH_Q),
         ];
-        if next.iter().any(|&value| value < I32_MIN_VALUE || value > i64::from(i32::MAX)) {
-            return Err(Error::Range("renderer accumulator exceeded its range".into()));
+        if next
+            .iter()
+            .any(|&value| value < I32_MIN_VALUE || value > i64::from(i32::MAX))
+        {
+            return Err(Error::Range(
+                "renderer accumulator exceeded its range".into(),
+            ));
         }
         self.accumulator_q16 = [next[0] as i32, next[1] as i32];
         self.update_history(mark[0] as i16, mark[1] as i16);

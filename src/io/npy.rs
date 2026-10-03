@@ -7,7 +7,9 @@ fn descriptor(text: &str) -> Result<DType> {
     let normalized = text.trim_matches(|c| c == '\'' || c == '"');
     let kind = normalized.trim_start_matches(['<', '=', '|', '>']);
     if normalized.starts_with('>') && kind != "b1" && kind != "i1" && kind != "u1" {
-        return Err(Error::Format(format!("big endian npy descriptor {normalized}")));
+        return Err(Error::Format(format!(
+            "big endian npy descriptor {normalized}"
+        )));
     }
     Ok(match kind {
         "b1" => DType::Bool,
@@ -31,7 +33,10 @@ fn field<'a>(header: &'a str, key: &str) -> Result<&'a str> {
         .find(key)
         .ok_or_else(|| Error::Format(format!("npy header has no {key}")))?
         + key.len();
-    let rest = header[start..].trim_start().trim_start_matches(':').trim_start();
+    let rest = header[start..]
+        .trim_start()
+        .trim_start_matches(':')
+        .trim_start();
     Ok(rest)
 }
 
@@ -59,7 +64,9 @@ pub fn parse(bytes: &[u8]) -> Result<Array> {
         descriptor(&rest[..end + 2])?
     };
     if field(header, "'fortran_order'")?.starts_with("True") {
-        return Err(Error::Format("fortran ordered npy arrays are unsupported".into()));
+        return Err(Error::Format(
+            "fortran ordered npy arrays are unsupported".into(),
+        ));
     }
     let shape = {
         let rest = field(header, "'shape'")?;

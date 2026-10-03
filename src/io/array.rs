@@ -98,8 +98,14 @@ impl Array {
     pub fn to_i64(&self) -> Result<Vec<i64>> {
         match self.dtype {
             DType::I64 => Ok(decode!(self.bytes, i64, 8)),
-            DType::I32 => Ok(decode!(self.bytes, i32, 4).into_iter().map(i64::from).collect()),
-            DType::I16 => Ok(decode!(self.bytes, i16, 2).into_iter().map(i64::from).collect()),
+            DType::I32 => Ok(decode!(self.bytes, i32, 4)
+                .into_iter()
+                .map(i64::from)
+                .collect()),
+            DType::I16 => Ok(decode!(self.bytes, i16, 2)
+                .into_iter()
+                .map(i64::from)
+                .collect()),
             DType::I8 => Ok(self.bytes.iter().map(|&b| i64::from(b as i8)).collect()),
             DType::U8 | DType::Bool => Ok(self.bytes.iter().map(|&b| i64::from(b)).collect()),
             _ => Err(self.mismatch("integer")),

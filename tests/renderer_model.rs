@@ -1,3 +1,5 @@
+#![allow(clippy::needless_range_loop)]
+
 mod common;
 
 use abcurves::renderer::RendererModel;
@@ -28,7 +30,9 @@ fn release_artifact_parses_and_verifies() {
     assert_eq!(parsed.fixed.log.len(), model::LUT_POINTS);
     assert_eq!(
         parsed.fixed.config,
-        [24576, 50412, 87381, 436907, 32768, 2097152, 32767, 0, 32768, 98304, 32768]
+        [
+            24576, 50412, 87381, 436907, 32768, 2097152, 32767, 0, 32768, 98304, 32768
+        ]
     );
     assert_eq!(parsed.adapter.mean.len(), 145);
     assert_eq!(parsed.adapter.v_q.len(), 16 * 145);

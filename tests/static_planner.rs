@@ -1,3 +1,5 @@
+#![allow(clippy::needless_range_loop)]
+
 mod common;
 
 use abcurves::static_planner::FastPlanner;
@@ -71,8 +73,8 @@ fn summary_and_plans_match_the_reference() {
                     event.progress,
                 );
                 for slot in 0..62 {
-                    worst_summary =
-                        worst_summary.max((raw[slot] - raw_summaries[event_index * 62 + slot]).abs());
+                    worst_summary = worst_summary
+                        .max((raw[slot] - raw_summaries[event_index * 62 + slot]).abs());
                 }
                 let mut vector = vec![0.0f32; 62];
                 planner.normalizer().apply(&raw, &mut vector);
@@ -83,14 +85,19 @@ fn summary_and_plans_match_the_reference() {
             }
 
             let check = |intent: abcurves::static_planner::Intent,
-                             plan_index: &mut usize,
-                             smooth_cursor: &mut usize,
-                             worst_smooth: &mut f32| {
+                         plan_index: &mut usize,
+                         smooth_cursor: &mut usize,
+                         worst_smooth: &mut f32| {
                 assert_eq!(
                     intent.duration_ms as i64, durations[*plan_index],
-                    "duration for plan {}", *plan_index
+                    "duration for plan {}",
+                    *plan_index
                 );
-                assert_eq!(intent.head as i64, heads[*plan_index], "head for plan {}", *plan_index);
+                assert_eq!(
+                    intent.head as i64, heads[*plan_index],
+                    "head for plan {}",
+                    *plan_index
+                );
                 for step in 0..intent.duration_ms {
                     for axis in 0..2 {
                         *worst_smooth = worst_smooth.max(
@@ -106,15 +113,39 @@ fn summary_and_plans_match_the_reference() {
 
             for head in 0..16 {
                 let intent = planner
-                    .plan(&event.prefix, event.target, event.radius, event.progress, 2026, Some(head))
+                    .plan(
+                        &event.prefix,
+                        event.target,
+                        event.radius,
+                        event.progress,
+                        2026,
+                        Some(head),
+                    )
                     .unwrap();
-                check(intent, &mut plan_index, &mut smooth_cursor, &mut worst_smooth);
+                check(
+                    intent,
+                    &mut plan_index,
+                    &mut smooth_cursor,
+                    &mut worst_smooth,
+                );
             }
             for seed in [0u128, 7, 23, 2026, 12345] {
                 let intent = planner
-                    .plan(&event.prefix, event.target, event.radius, event.progress, seed, None)
+                    .plan(
+                        &event.prefix,
+                        event.target,
+                        event.radius,
+                        event.progress,
+                        seed,
+                        None,
+                    )
                     .unwrap();
-                check(intent, &mut plan_index, &mut smooth_cursor, &mut worst_smooth);
+                check(
+                    intent,
+                    &mut plan_index,
+                    &mut smooth_cursor,
+                    &mut worst_smooth,
+                );
             }
         }
     }
@@ -123,7 +154,16 @@ fn summary_and_plans_match_the_reference() {
         "summary gap {worst_summary:e}, normalized gap {worst_vector:e}, smooth gap {worst_smooth:e}"
     );
     assert_eq!(plan_index, durations.len());
-    assert!(worst_summary == 0.0, "raw summary drifted {worst_summary:e}");
-    assert!(worst_vector == 0.0, "normalized summary drifted {worst_vector:e}");
-    assert!(worst_smooth < 1e-5, "smooth deltas drifted {worst_smooth:e}");
+    assert!(
+        worst_summary == 0.0,
+        "raw summary drifted {worst_summary:e}"
+    );
+    assert!(
+        worst_vector == 0.0,
+        "normalized summary drifted {worst_vector:e}"
+    );
+    assert!(
+        worst_smooth < 1e-5,
+        "smooth deltas drifted {worst_smooth:e}"
+    );
 }

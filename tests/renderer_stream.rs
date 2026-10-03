@@ -1,3 +1,5 @@
+#![allow(clippy::needless_range_loop)]
+
 mod common;
 
 use abcurves::renderer::{RendererModel, RendererProfile};
@@ -17,8 +19,22 @@ fn c_runtime_golden_vector_matches() {
     let profile = RendererProfile::prepare(&model, &context).unwrap();
     let mut stream = profile.begin_stream(123).unwrap();
     let expected = [
-        [1, 0], [1, 1], [1, 0], [0, 0], [2, 2], [1, 0], [1, 0], [1, 1],
-        [1, 0], [1, 1], [1, 0], [1, 1], [1, 0], [1, 1], [1, 0], [1, 1],
+        [1, 0],
+        [1, 1],
+        [1, 0],
+        [0, 0],
+        [2, 2],
+        [1, 0],
+        [1, 0],
+        [1, 1],
+        [1, 0],
+        [1, 1],
+        [1, 0],
+        [1, 1],
+        [1, 0],
+        [1, 1],
+        [1, 0],
+        [1, 1],
     ];
     for (tick, want) in expected.iter().enumerate() {
         let report = stream.step(&model, [1.0, 0.5]).unwrap();
@@ -73,7 +89,14 @@ fn accumulator_conserves_debt() {
     let zeros = vec![[0i16; 2]; 256];
     let profile = RendererProfile::prepare(&model, &zeros).unwrap();
     let directions: [(i32, i32); 8] = [
-        (1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1),
+        (1, 0),
+        (-1, 0),
+        (0, 1),
+        (0, -1),
+        (1, 1),
+        (1, -1),
+        (-1, 1),
+        (-1, -1),
     ];
     for seed in [6u64, 11, 23] {
         for (dx, dy) in directions {

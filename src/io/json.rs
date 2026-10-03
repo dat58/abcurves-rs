@@ -52,7 +52,9 @@ impl Json {
     pub fn as_object(&self) -> Result<&BTreeMap<String, Json>> {
         match self {
             Json::Object(items) => Ok(items),
-            other => Err(Error::Format(format!("expected an object, found {other:?}"))),
+            other => Err(Error::Format(format!(
+                "expected an object, found {other:?}"
+            ))),
         }
     }
 }
@@ -62,7 +64,7 @@ struct Parser<'a> {
     at: usize,
 }
 
-impl<'a> Parser<'a> {
+impl Parser<'_> {
     fn skip(&mut self) {
         while self.at < self.bytes.len() && self.bytes[self.at].is_ascii_whitespace() {
             self.at += 1;
@@ -145,7 +147,10 @@ impl<'a> Parser<'a> {
     fn number(&mut self) -> Result<Json> {
         let start = self.at;
         while self.at < self.bytes.len()
-            && matches!(self.bytes[self.at], b'0'..=b'9' | b'-' | b'+' | b'.' | b'e' | b'E')
+            && matches!(
+                self.bytes[self.at],
+                b'0'..=b'9' | b'-' | b'+' | b'.' | b'e' | b'E'
+            )
         {
             self.at += 1;
         }

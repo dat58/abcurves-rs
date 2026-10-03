@@ -1,3 +1,4 @@
+#![allow(clippy::needless_range_loop)]
 #![cfg(feature = "candle")]
 
 mod common;
@@ -75,8 +76,7 @@ fn candle_static_encoder_tracks_the_compiled_kernel() {
     }
     let path = root.join("planner_seed7.pt");
     let mut native = FastPlanner::open(&path, true).unwrap();
-    let mut candle =
-        FastPlanner::open_with(&path, true, NeuralInference::Candle).unwrap();
+    let mut candle = FastPlanner::open_with(&path, true, NeuralInference::Candle).unwrap();
     assert_eq!(candle.backend(), NeuralInference::Candle);
 
     let prefixes = read_f32("static_planner", "prefixes");
@@ -98,10 +98,24 @@ fn candle_static_encoder_tracks_the_compiled_kernel() {
         let target = [targets[index * 2], targets[index * 2 + 1]];
         for head in 0..16 {
             let reference = native
-                .plan(&prefix, target, radii[index], progresses[index], 0, Some(head))
+                .plan(
+                    &prefix,
+                    target,
+                    radii[index],
+                    progresses[index],
+                    0,
+                    Some(head),
+                )
                 .unwrap();
             let actual = candle
-                .plan(&prefix, target, radii[index], progresses[index], 0, Some(head))
+                .plan(
+                    &prefix,
+                    target,
+                    radii[index],
+                    progresses[index],
+                    0,
+                    Some(head),
+                )
                 .unwrap();
             assert_eq!(actual.head, reference.head);
             assert_eq!(
@@ -111,8 +125,9 @@ fn candle_static_encoder_tracks_the_compiled_kernel() {
             durations_matched += 1;
             for step in 0..reference.duration_ms {
                 for axis in 0..2 {
-                    worst = worst
-                        .max((actual.smooth_dxdy[step][axis] - reference.smooth_dxdy[step][axis]).abs());
+                    worst = worst.max(
+                        (actual.smooth_dxdy[step][axis] - reference.smooth_dxdy[step][axis]).abs(),
+                    );
                 }
             }
         }

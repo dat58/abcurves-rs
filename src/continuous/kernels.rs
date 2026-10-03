@@ -126,7 +126,11 @@ pub fn motor_features(window: &Window<'_>, out: &mut MotorFeatures) {
         for axis in 0..2 {
             let mut relative = 0.0;
             if known[index] && motion_known[index] {
-                let cumulative = if axis == 0 { cumulative_x } else { cumulative_y };
+                let cumulative = if axis == 0 {
+                    cumulative_x
+                } else {
+                    cumulative_y
+                };
                 let total = if axis == 0 { total_x } else { total_y };
                 let point = position[axis] + cumulative - total;
                 relative = ((target[index][axis] - point) / POSITION_SCALE).asinh();
@@ -184,7 +188,11 @@ pub fn motor_features(window: &Window<'_>, out: &mut MotorFeatures) {
         let mut acceleration = recent - earlier;
         acceleration *= VELOCITY_SCALE as f32;
         acceleration /= 4.0;
-        acceleration = if valid_acceleration { acceleration / 0.25 } else { 0.0 };
+        acceleration = if valid_acceleration {
+            acceleration / 0.25
+        } else {
+            0.0
+        };
         dynamics[axis] = fine[30 + axis];
         dynamics[2 + axis] = acceleration;
     }
@@ -192,8 +200,16 @@ pub fn motor_features(window: &Window<'_>, out: &mut MotorFeatures) {
     let error_y = f64::from(fine[49]).sinh() * POSITION_SCALE;
     let magnitude = (error_x * error_x + error_y * error_y + 100.0).sqrt();
     let known_target = fine[52] > 0.5;
-    let direction_x = if known_target { (error_x / magnitude) as f32 } else { 0.0 };
-    let direction_y = if known_target { (error_y / magnitude) as f32 } else { 0.0 };
+    let direction_x = if known_target {
+        (error_x / magnitude) as f32
+    } else {
+        0.0
+    };
+    let direction_y = if known_target {
+        (error_y / magnitude) as f32
+    } else {
+        0.0
+    };
     let relative_x = fine[30] - fine[50];
     let relative_y = fine[31] - fine[51];
     let acceleration_x = dynamics[2];
@@ -290,8 +306,8 @@ pub fn event_features(window: &Window<'_>, state: &EventState, out: &mut EventFe
     raw[7] = (velocity_8_x * axis_x + velocity_8_y * axis_y) as f32;
     raw[8] = (velocity_8_x * axis_y - velocity_8_y * axis_x).abs() as f32;
     raw[9] = growth as f32;
-    raw[10] =
-        (-(acceleration_x * velocity_8_x + acceleration_y * velocity_8_y) / speed_8.max(0.005)) as f32;
+    raw[10] = (-(acceleration_x * velocity_8_x + acceleration_y * velocity_8_y)
+        / speed_8.max(0.005)) as f32;
     raw[11] = excursion as f32;
     raw[12] = (127 - last_change) as f32;
     raw[13] = (target_count as f64 / 128.0) as f32;
@@ -320,8 +336,16 @@ pub fn event_features(window: &Window<'_>, state: &EventState, out: &mut EventFe
         0.0
     };
 
-    let context_goal_x = if known_context[639] { target[639][0] } else { position[0] };
-    let context_goal_y = if known_context[639] { target[639][1] } else { position[1] };
+    let context_goal_x = if known_context[639] {
+        target[639][0]
+    } else {
+        position[0]
+    };
+    let context_goal_y = if known_context[639] {
+        target[639][1]
+    } else {
+        position[1]
+    };
     let context_error_x = context_goal_x - position[0];
     let context_error_y = context_goal_y - position[1];
     let context_distance = norm(context_error_x, context_error_y);

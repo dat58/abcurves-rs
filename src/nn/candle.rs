@@ -106,14 +106,19 @@ impl CandleEngine {
         let mut pair_context = vec![0.0f32; 32 * 16];
         let mut pair_geometry = vec![0.0f32; 32 * 20];
         for row in 0..32 {
-            pair_geometry[row * 20..(row + 1) * 20]
-                .copy_from_slice(&pair[row * 36..row * 36 + 20]);
+            pair_geometry[row * 20..(row + 1) * 20].copy_from_slice(&pair[row * 36..row * 36 + 20]);
             pair_context[row * 16..(row + 1) * 16]
                 .copy_from_slice(&pair[row * 36 + 20..(row + 1) * 36]);
         }
 
         Ok(Self {
-            input: Layer::load(bundle, "motor.input.0.weight", "motor.input.0.bias", HIDDEN, 9)?,
+            input: Layer::load(
+                bundle,
+                "motor.input.0.weight",
+                "motor.input.0.bias",
+                HIDDEN,
+                9,
+            )?,
             input_gates: Layer::load(
                 bundle,
                 "motor.encoder.weight_ih_l0",
@@ -128,7 +133,13 @@ impl CandleEngine {
                 GATES,
                 HIDDEN,
             )?,
-            trunk: Layer::load(bundle, "motor.trunk.0.weight", "motor.trunk.0.bias", HIDDEN, COMBINED)?,
+            trunk: Layer::load(
+                bundle,
+                "motor.trunk.0.weight",
+                "motor.trunk.0.bias",
+                HIDDEN,
+                COMBINED,
+            )?,
             output: Layer::load(
                 bundle,
                 "motor.output.weight",
@@ -164,16 +175,58 @@ impl CandleEngine {
                 32,
             )?,
             hazard: [
-                Layer::load(bundle, "events.hazard.0.weight", "events.hazard.0.bias", 64, EVENT_CONTEXT_LEN)?,
-                Layer::load(bundle, "events.hazard.2.weight", "events.hazard.2.bias", 32, 64)?,
-                Layer::load(bundle, "events.hazard.4.weight", "events.hazard.4.bias", 2, 32)?,
+                Layer::load(
+                    bundle,
+                    "events.hazard.0.weight",
+                    "events.hazard.0.bias",
+                    64,
+                    EVENT_CONTEXT_LEN,
+                )?,
+                Layer::load(
+                    bundle,
+                    "events.hazard.2.weight",
+                    "events.hazard.2.bias",
+                    32,
+                    64,
+                )?,
+                Layer::load(
+                    bundle,
+                    "events.hazard.4.weight",
+                    "events.hazard.4.bias",
+                    2,
+                    32,
+                )?,
             ],
             brake_encoder: [
-                Layer::load(bundle, "events.encoder.0.weight", "events.encoder.0.bias", HIDDEN, EVENT_CONTEXT_LEN)?,
-                Layer::load(bundle, "events.encoder.2.weight", "events.encoder.2.bias", HIDDEN, HIDDEN)?,
+                Layer::load(
+                    bundle,
+                    "events.encoder.0.weight",
+                    "events.encoder.0.bias",
+                    HIDDEN,
+                    EVENT_CONTEXT_LEN,
+                )?,
+                Layer::load(
+                    bundle,
+                    "events.encoder.2.weight",
+                    "events.encoder.2.bias",
+                    HIDDEN,
+                    HIDDEN,
+                )?,
             ],
-            brake: Layer::load(bundle, "events.brake.weight", "events.brake.bias", HEADS * 11, HIDDEN)?,
-            frequency: Layer::load(bundle, "events.frequency.weight", "events.frequency.bias", HEADS, HIDDEN)?,
+            brake: Layer::load(
+                bundle,
+                "events.brake.weight",
+                "events.brake.bias",
+                HEADS * 11,
+                HIDDEN,
+            )?,
+            frequency: Layer::load(
+                bundle,
+                "events.frequency.weight",
+                "events.frequency.bias",
+                HEADS,
+                HIDDEN,
+            )?,
             encoded: vec![0.0; HIDDEN],
             coefficients: vec![0.0; COEFFICIENTS],
             logits: [0.0; HEADS],
@@ -192,7 +245,11 @@ impl CandleEngine {
         for row in 0..TOKENS {
             let recurrent = self.recurrent.apply(&hidden)?;
             let gate = projected.narrow(0, row, 1)?;
-            let reset = sigmoid(&gate.narrow(1, 0, HIDDEN)?.add(&recurrent.narrow(1, 0, HIDDEN)?)?)?;
+            let reset = sigmoid(
+                &gate
+                    .narrow(1, 0, HIDDEN)?
+                    .add(&recurrent.narrow(1, 0, HIDDEN)?)?,
+            )?;
             let update = sigmoid(
                 &gate
                     .narrow(1, HIDDEN, HIDDEN)?
@@ -220,21 +277,47 @@ impl CandleEngine {
     }
 
     pub fn choice(&mut self, geometry: &[f32], pairs: &[f32], previous_valid: bool) -> Result<()> {
-        self.choice_inner(geometry, pairs, previous_valid).map_err(wrap)
+        self.choice_inner(geometry, pairs, previous_valid)
+            .map_err(wrap)
     }
 
-    fn choice_inner(&mut self, geometry: &[f32], pairs: &[f32], previous_valid: bool) -> Outcome<()> {
+    fn choice_inner(
+        &mut self,
+        geometry: &[f32],
+        pairs: &[f32],
+        previous_valid: bool,
+    ) -> Outcome<()> {
         let encoded = Tensor::from_slice(&self.encoded, (1, HIDDEN), &Device::Cpu)?;
-        let shared = encoded.matmul(&self.unary_latent)?.broadcast_add(&self.unary_bias)?;
+        let shared = encoded
+            .matmul(&self.unary_latent)?
+            .broadcast_add(&self.unary_bias)?;
         let geometry = Tensor::from_slice(geometry, (HEADS, GEOMETRY_STEPS), &Device::Cpu)?;
-        let unary = silu(&geometry.matmul(&self.unary_geometry)?.broadcast_add(&shared)?)?;
-        let mut logits = self.unary_output.apply(&unary)?.flatten_all()?.to_vec1::<f32>()?;
+        let unary = silu(
+            &geometry
+                .matmul(&self.unary_geometry)?
+                .broadcast_add(&shared)?,
+        )?;
+        let mut logits = self
+            .unary_output
+            .apply(&unary)?
+            .flatten_all()?
+            .to_vec1::<f32>()?;
         if previous_valid {
             let context = silu(&self.context.apply(&encoded)?)?;
-            let shared_pair = context.matmul(&self.pair_context)?.broadcast_add(&self.pair_bias)?;
+            let shared_pair = context
+                .matmul(&self.pair_context)?
+                .broadcast_add(&self.pair_bias)?;
             let pairs = Tensor::from_slice(pairs, (HEADS, PAIR_LEN), &Device::Cpu)?;
-            let pair = silu(&pairs.matmul(&self.pair_geometry)?.broadcast_add(&shared_pair)?)?;
-            let transition = self.pair_output.apply(&pair)?.flatten_all()?.to_vec1::<f32>()?;
+            let pair = silu(
+                &pairs
+                    .matmul(&self.pair_geometry)?
+                    .broadcast_add(&shared_pair)?,
+            )?;
+            let transition = self
+                .pair_output
+                .apply(&pair)?
+                .flatten_all()?
+                .to_vec1::<f32>()?;
             for head in 0..HEADS {
                 logits[head] += transition[head];
             }
@@ -253,7 +336,10 @@ impl CandleEngine {
         let input = Tensor::from_slice(context, (1, EVENT_CONTEXT_LEN), &Device::Cpu)?;
         let first = silu(&self.hazard[0].apply(&input)?)?;
         let second = silu(&self.hazard[1].apply(&first)?)?;
-        self.hazard[2].apply(&second)?.flatten_all()?.to_vec1::<f32>()
+        self.hazard[2]
+            .apply(&second)?
+            .flatten_all()?
+            .to_vec1::<f32>()
     }
 
     pub fn brake(&mut self, context: &[f32], out: &mut EventOutputs) -> Result<()> {
@@ -275,8 +361,14 @@ impl CandleEngine {
         let stage = silu(&self.brake_encoder[0].apply(&input)?)?;
         let encoded = silu(&self.brake_encoder[1].apply(&stage)?)?;
         Ok((
-            self.brake.apply(&encoded)?.flatten_all()?.to_vec1::<f32>()?,
-            self.frequency.apply(&encoded)?.flatten_all()?.to_vec1::<f32>()?,
+            self.brake
+                .apply(&encoded)?
+                .flatten_all()?
+                .to_vec1::<f32>()?,
+            self.frequency
+                .apply(&encoded)?
+                .flatten_all()?
+                .to_vec1::<f32>()?,
         ))
     }
 

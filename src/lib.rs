@@ -1,3 +1,5 @@
+#![allow(clippy::needless_range_loop)]
+#![allow(clippy::comparison_chain)]
 pub mod continuous;
 pub mod error;
 pub mod io;
@@ -14,9 +16,9 @@ pub use continuous::{
     prepare_history,
 };
 pub use error::{Error, Result};
+pub use nn::NeuralInference;
 pub use renderer::{RendererModel, RendererProfile, RendererStream};
 pub use static_planner::{BEvent, BTrigger, FastPlanner, Intent, OnsetDetector, StaticPipeline};
-pub use nn::NeuralInference;
 
 pub fn load(options: ContinuousOptions) -> Result<MovementRuntime> {
     continuous::load(options)

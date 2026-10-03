@@ -1,3 +1,5 @@
+#![allow(clippy::needless_range_loop)]
+
 mod common;
 
 use abcurves::continuous::{ContinuousOptions, MovementRuntime, prepare_history};
@@ -71,7 +73,11 @@ fn prepared_history_matches_the_reference() {
     let expected_anchor = read_f64(FIXTURE, "filtered_xy");
     let rows: Vec<[f64; 2]> = raw.chunks_exact(2).map(|pair| [pair[0], pair[1]]).collect();
     let start = prepare_history(&rows, [observed[0], observed[1]]).unwrap();
-    let flat: Vec<f64> = start.history.iter().flat_map(|row| row.iter().copied()).collect();
+    let flat: Vec<f64> = start
+        .history
+        .iter()
+        .flat_map(|row| row.iter().copied())
+        .collect();
     assert_eq!(flat, expected_history);
     assert_eq!(start.initial_xy.to_vec(), expected_anchor);
     assert_eq!(start.observed_xy.to_vec(), observed);
@@ -111,7 +117,11 @@ fn streams_match_the_reference_planner() {
         let expected_at_ms = read_f64(FIXTURE, &format!("s{index}_at_ms"));
 
         assert_eq!(times, expected_time, "scenario {index} sample times");
-        assert_eq!(points.len() * 2, expected_xy.len(), "scenario {index} sample count");
+        assert_eq!(
+            points.len() * 2,
+            expected_xy.len(),
+            "scenario {index} sample count"
+        );
 
         let mut squared = 0.0f64;
         for (step, point) in points.iter().enumerate() {
@@ -125,9 +135,16 @@ fn streams_match_the_reference_planner() {
 
         DECISIONS.with(|slot| {
             let decisions = slot.borrow();
-            assert_eq!(decisions.len(), expected_mode.len(), "scenario {index} decisions");
+            assert_eq!(
+                decisions.len(),
+                expected_mode.len(),
+                "scenario {index} decisions"
+            );
             for (step, decision) in decisions.iter().enumerate() {
-                assert_eq!(decision.at_ms, expected_at_ms[step], "scenario {index} time {step}");
+                assert_eq!(
+                    decision.at_ms, expected_at_ms[step],
+                    "scenario {index} time {step}"
+                );
                 assert_eq!(
                     i64::from(decision.mode),
                     expected_mode[step],

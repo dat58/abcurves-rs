@@ -35,13 +35,34 @@ pub const RELEASE_FILE_ANCHORS: [(&str, u64, &str); 4] = [
 ];
 
 pub const FROZEN_CONTINUOUS_FILES: [(&str, &str); 7] = [
-    ("brake.onnx", "ec511415341b72284498ae0333cb12da6bf26e1f9c06562bc468766bfa636c24"),
-    ("choice.onnx", "805f517a27219bc20fd0418be02cbf5316a601f040533056fe61304ef5e2ac74"),
-    ("choice_split.onnx", "7a8d36ab01e719423854051a6b1a4f35536e5688e2eaf3e9e154f32e5e174bf1"),
-    ("events.onnx", "cd839db370bf0804550cc42e63667736ddd2c2f8fa05cd46453c7254c28dabe3"),
-    ("hazard.onnx", "ebd385e53ca15bb5ec5609018bdd93f2213875a41b3c78912986b00dfda12e53"),
-    ("motor.onnx", "116126ef8a6dc7aae027de596158d51e44a06fa30dcfd7058dfcde463106542c"),
-    ("weights.npz", "018a096c66213c62b429caf4a8ae6f0470f6e283248a24f476f0fed3e36ea881"),
+    (
+        "brake.onnx",
+        "ec511415341b72284498ae0333cb12da6bf26e1f9c06562bc468766bfa636c24",
+    ),
+    (
+        "choice.onnx",
+        "805f517a27219bc20fd0418be02cbf5316a601f040533056fe61304ef5e2ac74",
+    ),
+    (
+        "choice_split.onnx",
+        "7a8d36ab01e719423854051a6b1a4f35536e5688e2eaf3e9e154f32e5e174bf1",
+    ),
+    (
+        "events.onnx",
+        "cd839db370bf0804550cc42e63667736ddd2c2f8fa05cd46453c7254c28dabe3",
+    ),
+    (
+        "hazard.onnx",
+        "ebd385e53ca15bb5ec5609018bdd93f2213875a41b3c78912986b00dfda12e53",
+    ),
+    (
+        "motor.onnx",
+        "116126ef8a6dc7aae027de596158d51e44a06fa30dcfd7058dfcde463106542c",
+    ),
+    (
+        "weights.npz",
+        "018a096c66213c62b429caf4a8ae6f0470f6e283248a24f476f0fed3e36ea881",
+    ),
 ];
 
 pub fn sha256(path: &Path) -> Result<String> {
@@ -116,7 +137,9 @@ fn verified_file(directory: &Path, name: &str, manifest: &Json) -> Result<PathBu
     let (_, expected_bytes, expected) = RELEASE_FILE_ANCHORS
         .iter()
         .find(|(anchor, _, _)| *anchor == name)
-        .ok_or_else(|| Error::ModelIntegrity(format!("{name:?} has no immutable release anchor")))?;
+        .ok_or_else(|| {
+            Error::ModelIntegrity(format!("{name:?} has no immutable release anchor"))
+        })?;
     let path = directory.join(name);
     if !path.is_file() {
         return Err(Error::ModelIntegrity(format!(
@@ -157,7 +180,10 @@ pub fn resolve_model_files(
     let root = model_dir.map_or_else(default_model_dir, Path::to_path_buf);
     let manifest = load_manifest(&root, RELEASE_MANIFEST_SCHEMA)?;
     let seeds = manifest.entry("seeds")?.as_array()?;
-    if !seeds.iter().any(|value| value.as_u64().is_ok_and(|found| found == u64::from(seed))) {
+    if !seeds
+        .iter()
+        .any(|value| value.as_u64().is_ok_and(|found| found == u64::from(seed)))
+    {
         return Err(Error::ModelIntegrity(format!(
             "unsupported release seed {seed}"
         )));
@@ -200,7 +226,9 @@ pub fn verify_continuous_assets(directory: &Path, allow_custom: bool) -> Result<
             .entry("sha256")?
             .as_str()?;
         if brake != FROZEN_BRAKE_AND_HAZARDS {
-            return Err(Error::ModelIntegrity("Bundle is not the frozen B2-23".into()));
+            return Err(Error::ModelIntegrity(
+                "Bundle is not the frozen B2-23".into(),
+            ));
         }
         let frozen_matches = files.len() == FROZEN_CONTINUOUS_FILES.len()
             && FROZEN_CONTINUOUS_FILES.iter().all(|(name, digest)| {
@@ -216,7 +244,9 @@ pub fn verify_continuous_assets(directory: &Path, allow_custom: bool) -> Result<
         let digest = declared.as_str()?;
         let path = directory.join(name);
         if sha256(&path)? != digest {
-            return Err(Error::ModelIntegrity(format!("Asset digest mismatch: {name}")));
+            return Err(Error::ModelIntegrity(format!(
+                "Asset digest mismatch: {name}"
+            )));
         }
     }
     Ok(manifest)

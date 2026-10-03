@@ -59,7 +59,9 @@ impl Value {
         match self {
             Value::Int(value) => Ok(*value),
             Value::Bool(value) => Ok(i64::from(*value)),
-            other => Err(Error::Format(format!("expected an integer, found {other:?}"))),
+            other => Err(Error::Format(format!(
+                "expected an integer, found {other:?}"
+            ))),
         }
     }
 
@@ -86,7 +88,9 @@ impl Value {
     pub fn as_sequence(&self) -> Result<&[Value]> {
         match self {
             Value::List(items) | Value::Tuple(items) => Ok(items),
-            other => Err(Error::Format(format!("expected a sequence, found {other:?}"))),
+            other => Err(Error::Format(format!(
+                "expected a sequence, found {other:?}"
+            ))),
         }
     }
 
@@ -224,22 +228,32 @@ pub fn load(bytes: &[u8]) -> Result<Value> {
             b']' => stack.push(Value::List(Vec::new())),
             b')' => stack.push(Value::Tuple(Vec::new())),
             b't' => {
-                let mark = marks.pop().ok_or_else(|| Error::Format("pickle mark underflow".into()))?;
+                let mark = marks
+                    .pop()
+                    .ok_or_else(|| Error::Format("pickle mark underflow".into()))?;
                 let items = stack.split_off(mark);
                 stack.push(Value::Tuple(items));
             }
-            0x85 | 0x86 | 0x87 => {
+            0x85..=0x87 => {
                 let count = usize::from(reader.bytes[reader.at - 1] - 0x84);
                 let items = stack.split_off(stack.len() - count);
                 stack.push(Value::Tuple(items));
             }
             b'q' => {
                 let index = usize::from(reader.byte()?);
-                remember(&mut memo, index, stack.last().cloned().unwrap_or(Value::None));
+                remember(
+                    &mut memo,
+                    index,
+                    stack.last().cloned().unwrap_or(Value::None),
+                );
             }
             b'r' => {
                 let index = reader.u32()? as usize;
-                remember(&mut memo, index, stack.last().cloned().unwrap_or(Value::None));
+                remember(
+                    &mut memo,
+                    index,
+                    stack.last().cloned().unwrap_or(Value::None),
+                );
             }
             b'h' => {
                 let index = usize::from(reader.byte()?);
@@ -257,7 +271,9 @@ pub fn load(bytes: &[u8]) -> Result<Value> {
                 }
             }
             b'e' => {
-                let mark = marks.pop().ok_or_else(|| Error::Format("pickle mark underflow".into()))?;
+                let mark = marks
+                    .pop()
+                    .ok_or_else(|| Error::Format("pickle mark underflow".into()))?;
                 let appended = stack.split_off(mark);
                 match stack.last_mut() {
                     Some(Value::List(items)) => items.extend(appended),
@@ -273,7 +289,9 @@ pub fn load(bytes: &[u8]) -> Result<Value> {
                 }
             }
             b'u' => {
-                let mark = marks.pop().ok_or_else(|| Error::Format("pickle mark underflow".into()))?;
+                let mark = marks
+                    .pop()
+                    .ok_or_else(|| Error::Format("pickle mark underflow".into()))?;
                 let pairs = stack.split_off(mark);
                 match stack.last_mut() {
                     Some(Value::Dict(items)) => {
@@ -319,7 +337,11 @@ fn persistent(identifier: Value) -> Result<Value> {
     }
     let dtype = match &items[1] {
         Value::Global(_, name) => storage_dtype(name)?,
-        other => return Err(Error::Format(format!("expected a storage type, found {other:?}"))),
+        other => {
+            return Err(Error::Format(format!(
+                "expected a storage type, found {other:?}"
+            )));
+        }
     };
     Ok(Value::Storage(StorageRef {
         key: items[2].as_str()?.to_string(),
@@ -339,7 +361,11 @@ fn reduce(callable: Value, arguments: Value) -> Result<Value> {
             let items = arguments.as_sequence()?;
             let storage = match &items[0] {
                 Value::Storage(storage) => storage.clone(),
-                other => return Err(Error::Format(format!("expected a storage, found {other:?}"))),
+                other => {
+                    return Err(Error::Format(format!(
+                        "expected a storage, found {other:?}"
+                    )));
+                }
             };
             let dimensions = |value: &Value| -> Result<Vec<usize>> {
                 value.as_sequence()?.iter().map(Value::as_usize).collect()
@@ -351,6 +377,8 @@ fn reduce(callable: Value, arguments: Value) -> Result<Value> {
                 stride: dimensions(&items[3])?,
             }))
         }
-        _ => Err(Error::Format(format!("unsupported constructor {module}.{name}"))),
+        _ => Err(Error::Format(format!(
+            "unsupported constructor {module}.{name}"
+        ))),
     }
 }

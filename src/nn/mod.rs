@@ -31,9 +31,9 @@ impl Engine {
         match backend {
             NeuralInference::Native => Ok(Engine::Native(Box::new(NativeEngine::load(bundle)?))),
             #[cfg(feature = "candle")]
-            NeuralInference::Candle => {
-                Ok(Engine::Candle(Box::new(candle::CandleEngine::load(bundle)?)))
-            }
+            NeuralInference::Candle => Ok(Engine::Candle(Box::new(candle::CandleEngine::load(
+                bundle,
+            )?))),
             #[cfg(not(feature = "candle"))]
             NeuralInference::Candle => Err(crate::error::Error::InferenceContract(
                 "the candle backend requires the 'candle' feature".into(),

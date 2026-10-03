@@ -28,7 +28,11 @@ pub fn silu_pade9(value: f32) -> f32 {
 pub fn sigmoid_exact(value: f32) -> f32 {
     let z = exp_f32(-value.abs());
     let denominator = 1.0 + z;
-    if value >= 0.0 { 1.0 / denominator } else { z / denominator }
+    if value >= 0.0 {
+        1.0 / denominator
+    } else {
+        z / denominator
+    }
 }
 
 #[inline]

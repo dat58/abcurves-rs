@@ -30,7 +30,11 @@ impl fmt::Display for AdvanceError {
         match self {
             AdvanceError::Contract(error) => write!(f, "{error}"),
             AdvanceError::Failed(failure) => {
-                write!(f, "Policy action failed at {} us: {}", failure.at_us, failure.message)
+                write!(
+                    f,
+                    "Policy action failed at {} us: {}",
+                    failure.at_us, failure.message
+                )
             }
         }
     }
@@ -339,7 +343,9 @@ impl MovementRuntime {
         self.requested_us = timestamp_us;
         let count = ((timestamp_us - self.now_us) / SAMPLE_US).max(0) as usize;
         let base = self.now_us;
-        let time_us: Vec<i64> = (1..=count as i64).map(|step| base + step * SAMPLE_US).collect();
+        let time_us: Vec<i64> = (1..=count as i64)
+            .map(|step| base + step * SAMPLE_US)
+            .collect();
         let mut xy = vec![[0.0f64; 2]; count];
         self.arrive();
         for output_at in 0..count {
