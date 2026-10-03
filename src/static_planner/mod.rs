@@ -1,3 +1,5 @@
+#[cfg(feature = "candle")]
+pub mod candle;
 pub mod pipeline;
 pub mod planner;
 pub mod prodmp;

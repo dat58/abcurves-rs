@@ -4,6 +4,7 @@ use super::tcn::{self, CHANNELS, INPUT_CHANNELS, KERNEL, TcnWeights, TcnWorkspac
 use crate::error::{Error, Result, require};
 use crate::io::{Checkpoint, Value};
 use crate::model_store;
+use crate::nn::NeuralInference;
 use crate::rng::head_from_seed;
 use std::path::Path;
 
@@ -49,6 +50,9 @@ pub struct FastPlanner {
     y_mean: Vec<f32>,
     y_std: Vec<f32>,
     decoder: ComponentCache,
+    backend: NeuralInference,
+    #[cfg(feature = "candle")]
+    candle: Option<super::candle::CandleTcn>,
     pub seed: u32,
 }
 
@@ -71,6 +75,18 @@ impl FastPlanner {
     }
 
     pub fn open(path: impl AsRef<Path>, prewarm: bool) -> Result<Self> {
+        Self::open_with(path, prewarm, NeuralInference::Native)
+    }
+
+    pub fn backend(&self) -> NeuralInference {
+        self.backend
+    }
+
+    pub fn open_with(
+        path: impl AsRef<Path>,
+        prewarm: bool,
+        backend: NeuralInference,
+    ) -> Result<Self> {
         let checkpoint = Checkpoint::open(path)?;
         let root = checkpoint.root();
         require(
@@ -206,6 +222,18 @@ impl FastPlanner {
             summary_dim,
         };
 
+        #[cfg(feature = "candle")]
+        let candle = match backend {
+            NeuralInference::Candle => Some(super::candle::CandleTcn::load(&checkpoint, summary_dim)?),
+            NeuralInference::Native => None,
+        };
+        #[cfg(not(feature = "candle"))]
+        if backend == NeuralInference::Candle {
+            return Err(Error::InferenceContract(
+                "the candle backend requires the 'candle' feature".into(),
+            ));
+        }
+
         Ok(Self {
             workspace: TcnWorkspace::new(summary_dim),
             weights,
@@ -215,6 +243,9 @@ impl FastPlanner {
             y_mean: tensor(root.entry("y_mean")?)?,
             y_std: tensor(root.entry("y_std")?)?,
             decoder,
+            backend,
+            #[cfg(feature = "candle")]
+            candle,
             seed: root.entry("seed")?.as_i64()? as u32,
         })
     }
@@ -304,24 +335,30 @@ impl FastPlanner {
             None => head_from_seed(seed, HEADS as u32),
         };
 
-        let mut head_weight = vec![0.0f32; CHANNELS * OUT_DIM];
-        for channel in 0..CHANNELS {
-            for slot in 0..OUT_DIM {
-                head_weight[channel * OUT_DIM + slot] =
-                    self.weights.head_weight[(chosen * OUT_DIM + slot) * CHANNELS + channel];
-            }
-        }
-        let head_bias = &self.weights.head_bias[chosen * OUT_DIM..(chosen + 1) * OUT_DIM];
         let mut prediction = vec![0.0f32; OUT_DIM];
-        tcn::forward(
-            &self.weights,
-            &mut self.workspace,
-            &window,
-            &summary,
-            &head_weight,
-            head_bias,
-            &mut prediction,
-        );
+        #[cfg(feature = "candle")]
+        if let Some(engine) = self.candle.as_ref() {
+            engine.forward(&window, &summary, chosen, &mut prediction)?;
+        }
+        if self.backend == NeuralInference::Native {
+            let mut head_weight = vec![0.0f32; CHANNELS * OUT_DIM];
+            for channel in 0..CHANNELS {
+                for slot in 0..OUT_DIM {
+                    head_weight[channel * OUT_DIM + slot] =
+                        self.weights.head_weight[(chosen * OUT_DIM + slot) * CHANNELS + channel];
+                }
+            }
+            let head_bias = &self.weights.head_bias[chosen * OUT_DIM..(chosen + 1) * OUT_DIM];
+            tcn::forward(
+                &self.weights,
+                &mut self.workspace,
+                &window,
+                &summary,
+                &head_weight,
+                head_bias,
+                &mut prediction,
+            );
+        }
 
         let mut raw_output = vec![0.0f64; OUT_DIM];
         for slot in 0..OUT_DIM {

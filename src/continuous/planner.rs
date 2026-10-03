@@ -3,14 +3,14 @@ use super::kernels::{self, EventFeatures, EventState, MotorFeatures, Window};
 use crate::error::{Error, Result};
 use crate::io::Npz;
 use crate::math::log_f32;
-use crate::nn::{EventOutputs, NativeEngine, hazard_probabilities};
+use crate::nn::{Engine, EventOutputs, NeuralInference, hazard_probabilities};
 use crate::rng::{RandomStream, softmax_into};
 
 const SELECTOR_SALT: u64 = 0x5397A1;
 const BRAKE_SALT: u64 = 0x1763B4;
 
 pub struct Planner {
-    engine: NativeEngine,
+    engine: Engine,
     velocity_basis: Vec<f64>,
     carry_velocity: Vec<f64>,
     mean_basis: Vec<f64>,
@@ -66,8 +66,8 @@ pub struct Decision {
 }
 
 impl Planner {
-    pub fn load(bundle: &Npz, skip_unused: bool) -> Result<Self> {
-        let engine = NativeEngine::load(bundle)?;
+    pub fn load(bundle: &Npz, skip_unused: bool, backend: NeuralInference) -> Result<Self> {
+        let engine = Engine::load(bundle, backend)?;
         let velocity_basis = bundle.f64("motor.velocity_basis")?;
         let carry_velocity = bundle.f64("motor.carry_velocity")?;
         let (mean_basis, mean_carry) = kernels::decoder_geometry(&velocity_basis, &carry_velocity);
@@ -130,6 +130,10 @@ impl Planner {
         self.decisions.clear();
     }
 
+    pub fn backend(&self) -> NeuralInference {
+        self.engine.backend()
+    }
+
     pub fn mode(&self) -> u8 {
         self.mode.unwrap_or(MODE_HOLD)
     }
@@ -165,10 +169,11 @@ impl Planner {
     fn run_motor(&mut self, window: &Window<'_>) {
         kernels::motor_features(window, &mut self.motor);
         self.engine
-            .motor(&self.motor.coarse, &self.motor.fine, &self.motor.dynamics);
+            .motor(&self.motor.coarse, &self.motor.fine, &self.motor.dynamics)
+            .expect("motor evaluation");
         let incoming = window.history[HISTORY_SAMPLES - 1];
         kernels::decode_geometry(
-            &self.engine.coefficients,
+            self.engine.coefficients(),
             incoming,
             &self.mean_basis,
             &self.mean_carry,
@@ -189,8 +194,9 @@ impl Planner {
         };
         kernels::selector_inputs(&self.heads, previous, &mut self.geometry, &mut self.pairs);
         self.engine
-            .choice(&self.geometry, &self.pairs, self.previous_valid);
-        let logits = self.engine.logits;
+            .choice(&self.geometry, &self.pairs, self.previous_valid)
+            .expect("choice evaluation");
+        let logits = self.engine.logits();
         softmax_into(&logits, &mut self.probabilities).expect("choice logits are finite");
         let chosen = self.motor_rng.categorical(&self.probabilities);
         self.previous.copy_from_slice(
@@ -200,8 +206,10 @@ impl Planner {
         self.origin = Some(window.position);
         self.previous_valid = true;
         self.motor_evaluations += 1;
+        let coefficients =
+            self.engine.coefficients()[chosen * WEIGHTS * 2..(chosen + 1) * WEIGHTS * 2].to_vec();
         kernels::decode_selected(
-            &self.engine.coefficients[chosen * WEIGHTS * 2..(chosen + 1) * WEIGHTS * 2],
+            &coefficients,
             incoming,
             &self.velocity_basis[..COMMIT_SAMPLES * WEIGHTS],
             &self.carry_velocity[..COMMIT_SAMPLES],
@@ -272,11 +280,11 @@ impl Planner {
         let mut hazard = [0.0f32; 2];
         let mut have_hazard = false;
         if full_events {
-            self.engine.events(&self.events.context, &mut self.outputs);
+            self.engine.events(&self.events.context, &mut self.outputs)?;
             hazard = self.outputs.hazard;
             have_hazard = true;
         } else if need_hazard {
-            self.engine.hazard(&self.events.context, &mut hazard);
+            self.engine.hazard(&self.events.context, &mut hazard)?;
             have_hazard = true;
         }
         let probabilities = if have_hazard {
@@ -304,7 +312,7 @@ impl Planner {
             }
             if self.stop_integral >= f64::from(self.stop_budget) && known {
                 if !full_events {
-                    self.engine.brake(&self.events.context, &mut self.outputs);
+                    self.engine.brake(&self.events.context, &mut self.outputs)?;
                     let mut weights = [0.0f32; HEADS];
                     softmax_into(&self.outputs.frequency, &mut weights)?;
                     brake_head = Some(self.brake_rng.categorical(&weights));
@@ -449,10 +457,10 @@ impl Planner {
         self.run_motor(&window);
         let _ = self.plan(&window, 0);
         let context = [0.0f32; EVENT_CONTEXT_LEN];
-        self.engine.events(&context, &mut self.outputs);
+        let _ = self.engine.events(&context, &mut self.outputs);
         let mut hazard = [0.0f32; 2];
-        self.engine.hazard(&context, &mut hazard);
-        self.engine.brake(&context, &mut self.outputs);
+        let _ = self.engine.hazard(&context, &mut hazard);
+        let _ = self.engine.brake(&context, &mut self.outputs);
         self.reset(7);
     }
 }

@@ -3,6 +3,7 @@ use super::runtime::MovementRuntime;
 use crate::error::Result;
 use crate::io::Npz;
 use crate::model_store;
+use crate::nn::NeuralInference;
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug)]
@@ -14,6 +15,7 @@ pub struct ContinuousOptions {
     pub prewarm: bool,
     pub skip_unused: bool,
     pub verify_assets: bool,
+    pub backend: NeuralInference,
     pub allow_custom_assets: bool,
 }
 
@@ -27,6 +29,7 @@ impl Default for ContinuousOptions {
             prewarm: true,
             skip_unused: true,
             verify_assets: true,
+            backend: NeuralInference::Native,
             allow_custom_assets: false,
         }
     }
@@ -63,6 +66,11 @@ impl ContinuousOptions {
         self
     }
 
+    pub fn backend(mut self, backend: NeuralInference) -> Self {
+        self.backend = backend;
+        self
+    }
+
     pub fn verify_assets(mut self, verify: bool) -> Self {
         self.verify_assets = verify;
         self
@@ -82,7 +90,7 @@ pub fn load(options: ContinuousOptions) -> Result<MovementRuntime> {
         model_store::verify_continuous_assets(&directory, options.allow_custom_assets)?;
     }
     let bundle = Npz::open(directory.join("weights.npz"))?;
-    let mut planner = Planner::load(&bundle, options.skip_unused)?;
+    let mut planner = Planner::load(&bundle, options.skip_unused, options.backend)?;
     if options.prewarm {
         planner.prewarm();
     }
