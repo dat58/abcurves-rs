@@ -587,6 +587,107 @@ def static_planner():
     save("static_planner", **arrays)
 
 
+@generator("static_pipeline")
+def static_pipeline():
+    from abcurves import StaticPipeline
+    from abcurves.seam import BFire, BReject, BTrigger
+
+    names = ("static_event", "static_event_short", "static_event_long")
+    arrays = {}
+    arm_arrays = {}
+    raw_all, profile_all, lengths = [], [], []
+    trigger_t, trigger_edge, trigger_center, trigger_reason = [], [], [], []
+    fire_target, fire_radius = [], []
+    report_counts, reports_all = [], []
+
+    for index, name in enumerate(names):
+        with np.load(ORIGIN / "examples" / "data" / f"{name}.npz", allow_pickle=False) as data:
+            event = {key: data[key] for key in data.files}
+        raw = np.asarray(event["raw_dxdy"], np.int16)
+        target_a = np.asarray(event["target_rel_a"], np.float64)
+        radius = float(event["target_radius"])
+        profile_window = np.asarray(event["profile_before_a"], np.int16)
+        arm_arrays[f"target_a_{index}"] = target_a
+        arm_arrays[f"radius_{index}"] = np.array([radius], np.float64)
+        raw_all.append(raw.reshape(-1))
+        lengths.append(len(raw))
+        profile_all.append(profile_window.reshape(-1))
+
+        from abcurves.seam import OnsetDetector
+        detector = OnsetDetector()
+        onset = None
+        running = np.zeros(2)
+        for tick, delta in enumerate(raw):
+            event = detector.push(float(delta[0]), float(delta[1]),
+                                  target_a - running)
+            running = running + delta
+            if event is not None:
+                onset = event
+                break
+        arm_arrays[f"onset_{index}"] = np.array(
+            [-1 if onset is None else onset.index], np.int64)
+        arm_arrays[f"onset_stats_{index}"] = np.array(
+            [0.0, 0.0, 0.0] if onset is None
+            else [onset.threshold, onset.speed_median, onset.speed_mad], np.float64)
+
+        trigger = BTrigger.recommended()
+        trigger.arm(target_a, radius)
+        outcome = None
+        for tick, delta in enumerate(raw):
+            target_now = target_a - raw[: tick + 1].sum(axis=0, dtype=np.float64)
+            result = trigger.push_tick(*delta.astype(np.float64),
+                                       target_rel_now=target_now, target_radius_now=radius)
+            if result is not None:
+                outcome = (tick, result)
+                break
+        assert outcome is not None, name
+        tick, result = outcome
+        if isinstance(result, BReject):
+            trigger_t.append(result.t_ms)
+            trigger_edge.append(float("nan"))
+            trigger_center.append(result.progress_center)
+            trigger_reason.append(1)
+            fire_target.append(np.zeros(2))
+            fire_radius.append(0.0)
+            report_counts.append(0)
+            continue
+        assert isinstance(result, BFire)
+        trigger_t.append(result.t_ms)
+        trigger_edge.append(result.progress_edge)
+        trigger_center.append(result.progress_center)
+        trigger_reason.append(0)
+        fire_target.append(np.asarray(result.target_rel_at_B, np.float64))
+        fire_radius.append(result.target_radius)
+
+        prefix = raw[: tick + 1].astype(np.float32)
+        for model_seed in (7, 23):
+            with StaticPipeline.from_pretrained(model_seed=model_seed) as pipeline:
+                profile = pipeline.prepare_renderer_profile(profile_window)
+                for seed in (7, 2026, 12345):
+                    out = pipeline.generate(
+                        prefix, renderer_profile=profile,
+                        target_rel_at_B=result.target_rel_at_B,
+                        target_radius=result.target_radius,
+                        progress_center=result.progress_center, seed=seed)
+                    reports_all.append(np.asarray(out, np.int16).reshape(-1))
+                    report_counts.append(len(out))
+
+    arrays["raw"] = np.concatenate(raw_all)
+    arrays["raw_lengths"] = np.array(lengths, np.int64)
+    arrays["profiles"] = np.concatenate(profile_all)
+    arrays["trigger_t"] = np.array(trigger_t, np.int64)
+    arrays["trigger_edge"] = np.array(trigger_edge, np.float64)
+    arrays["trigger_center"] = np.array(trigger_center, np.float64)
+    arrays["trigger_reason"] = np.array(trigger_reason, np.int64)
+    arrays["fire_target"] = np.concatenate(fire_target)
+    arrays["fire_radius"] = np.array(fire_radius, np.float64)
+    arrays["report_counts"] = np.array(report_counts, np.int64)
+    arrays["reports"] = np.concatenate(reports_all)
+    print(f"  {len(report_counts)} continuations, {len(arrays['reports']) // 2} reports")
+    save("static_pipeline", **arrays)
+    save("static_pipeline_arm", **arm_arrays)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("names", nargs="*")

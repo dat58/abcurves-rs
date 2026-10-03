@@ -14,6 +14,8 @@ pub use continuous::{
     prepare_history,
 };
 pub use error::{Error, Result};
+pub use renderer::{RendererModel, RendererProfile, RendererStream};
+pub use static_planner::{BEvent, BTrigger, FastPlanner, Intent, OnsetDetector, StaticPipeline};
 pub use nn::NeuralInference;
 
 pub fn load(options: ContinuousOptions) -> Result<MovementRuntime> {
