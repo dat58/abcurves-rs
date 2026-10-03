@@ -8,7 +8,8 @@ pub mod renderer;
 pub mod rng;
 
 pub use continuous::{
-    Advance, AdvanceError, ContinuousOptions, HumanStart, MovementRuntime, RuntimeFailure,
+    Advance, AdvanceError, ContinuousOptions, ContinuousPipeline, CountTransform, HumanStart,
+    MovementRuntime, PipelineAdvance, PipelineError, PipelineOptions, RuntimeFailure,
     prepare_history,
 };
 pub use error::{Error, Result};

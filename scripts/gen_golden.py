@@ -446,6 +446,52 @@ def renderer():
     save("renderer", **arrays)
 
 
+@generator("continuous_pipeline")
+def continuous_pipeline():
+    from abcurves import ContinuousPipeline, CountTransform, prepare_history
+
+    with np.load(ORIGIN / "examples" / "data" / "human_start.npz", allow_pickle=False) as data:
+        fixture = {name: data[name] for name in data.files}
+    transform = CountTransform(float(fixture["radians_per_count"]), y_down=True)
+    human = prepare_history(fixture["raw_common"], current_xy=fixture["observed_xy"])
+
+    arrays = {}
+
+    stream = ContinuousPipeline(fixture["profile_hardware"], transform=transform,
+                                seed=2026, renderer_seed=101, initial_xy=(0.0, 0.0))
+    stream.update_target((100.0, 30.0), timestamp_us=0)
+    times, points, reports, rendered = [], [], [], []
+    for tick in range(1, 1001):
+        if tick == 501:
+            stream.update_target((160.0, -40.0), timestamp_us=500_000)
+        block = stream.advance(tick * 1000)
+        times.append(block["time_us"])
+        points.append(block["xy"])
+        reports.append(block["reports"])
+        rendered.append(block["rendered_xy"])
+    arrays["p0_time"] = np.concatenate(times)
+    arrays["p0_xy"] = np.concatenate(points).reshape(-1)
+    arrays["p0_reports"] = np.concatenate(reports).reshape(-1)
+    arrays["p0_rendered"] = np.concatenate(rendered).reshape(-1)
+    arrays["p0_final"] = np.asarray(stream.rendered_xy, np.float64)
+
+    assisted = ContinuousPipeline(fixture["profile_hardware"], transform=transform,
+                                  initial_xy=human.observed_xy, history=human.history,
+                                  seed=2026, renderer_seed=101,
+                                  observed_xy=human.observed_xy)
+    assisted.update_target(tuple(float(v) for v in fixture["target_xy"]), timestamp_us=0)
+    block = assisted.advance(128_000)
+    tail = assisted.advance(1_000_000)
+    arrays["p1_time"] = np.concatenate([block["time_us"], tail["time_us"]])
+    arrays["p1_xy"] = np.concatenate([block["xy"], tail["xy"]]).reshape(-1)
+    arrays["p1_reports"] = np.concatenate([block["reports"], tail["reports"]]).reshape(-1)
+    arrays["p1_rendered"] = np.concatenate([block["rendered_xy"], tail["rendered_xy"]]).reshape(-1)
+    arrays["p1_final"] = np.asarray(assisted.rendered_xy, np.float64)
+
+    print(f"  pipeline samples: {len(arrays['p0_time'])} and {len(arrays['p1_time'])}")
+    save("continuous_pipeline", **arrays)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("names", nargs="*")
