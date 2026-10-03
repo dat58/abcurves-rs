@@ -117,6 +117,70 @@ def rng_pcg64():
     )
 
 
+def digest_of(array):
+    import hashlib
+    contiguous = np.ascontiguousarray(array)
+    return np.frombuffer(hashlib.sha256(contiguous.tobytes()).digest(), dtype=np.uint8)
+
+
+def describe(named):
+    """Pack name list, shapes and per-array content digests."""
+    names, shapes, digests = [], [], []
+    for name in sorted(named):
+        value = np.asarray(named[name])
+        names.append(name)
+        shapes.append([value.ndim, *value.shape])
+        digests.append(digest_of(value))
+    return (
+        np.frombuffer("\n".join(names).encode("utf8"), dtype=np.uint8),
+        np.array([item for shape in shapes for item in shape], dtype=np.int64),
+        np.concatenate(digests) if digests else np.zeros(0, np.uint8),
+    )
+
+
+@generator("artifacts")
+def artifacts():
+    import torch
+
+    with np.load(ORIGIN / "models" / "continuous" / "weights.npz", allow_pickle=False) as bundle:
+        continuous = {name: bundle[name] for name in bundle.files}
+    continuous_names, continuous_shapes, continuous_digests = describe(continuous)
+
+    payload = torch.load(ORIGIN / "models" / "planner_seed7.pt", map_location="cpu", weights_only=True)
+    tensors = {name: value.numpy() for name, value in payload["model_state_dict"].items()}
+    for extra in ("summary_mean", "summary_std", "prefix_mean", "prefix_std", "y_mean", "y_std"):
+        tensors[extra] = payload[extra].numpy()
+    planner_names, planner_shapes, planner_digests = describe(tensors)
+
+    meta = np.array([
+        payload["heads"], payload["horizon"], payload["summary_dim"], payload["target_dim"],
+        payload["planner_config"]["prefix_len"], payload["prodmp"]["n_basis"],
+    ], dtype=np.int64)
+    scalars = np.array([
+        payload["prodmp"]["alpha"], payload["prodmp"]["alpha_phase"], payload["prodmp"]["ridge"],
+        *payload["hinge_thresholds"],
+    ], dtype=np.float64)
+    text = "\n".join([
+        payload["schema"], payload["release_schema"], payload["release_status"],
+        payload["seam_contract"]["schema"], payload["seam_contract"]["trigger"]["reference"],
+        payload["prefix_representation"]["name"],
+        *payload["summary_feature_names"],
+    ])
+
+    save(
+        "artifacts",
+        continuous_names=continuous_names,
+        continuous_shapes=continuous_shapes,
+        continuous_digests=continuous_digests,
+        planner_names=planner_names,
+        planner_shapes=planner_shapes,
+        planner_digests=planner_digests,
+        meta=meta,
+        scalars=scalars,
+        text=np.frombuffer(text.encode("utf8"), dtype=np.uint8),
+    )
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("names", nargs="*")
