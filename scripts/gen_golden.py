@@ -522,6 +522,71 @@ def prodmp():
     )
 
 
+@generator("static_planner")
+def static_planner():
+    from abcurves import StaticPlanner
+
+    events = {}
+    for name in ("static_event", "static_event_short", "static_event_long"):
+        with np.load(ORIGIN / "examples" / "data" / f"{name}.npz", allow_pickle=False) as data:
+            events[name] = {key: data[key] for key in data.files}
+
+    arrays = {}
+    raw_summaries, vectors, predictions, smooths, durations, heads = [], [], [], [], [], []
+    prefixes, targets, radii, progresses, lengths = [], [], [], [], []
+
+    for model_seed in (7, 23):
+        planner = StaticPlanner.from_pretrained(model_seed=model_seed, prewarm=True)
+        for name, event in events.items():
+            raw = np.asarray(event["raw_dxdy"], np.float32)
+            b_index = int(event["b_index"])
+            prefix = raw[: b_index + 1]
+            target = np.asarray(event["target_rel_b"], np.float64)
+            radius = float(event["target_radius"])
+            progress = float(event["progress_center"])
+            if model_seed == 7:
+                prefixes.append(prefix.reshape(-1))
+                lengths.append(len(prefix))
+                targets.append(target)
+                radii.append(radius)
+                progresses.append(progress)
+                represented = planner.planner.represented_prefix_views(prefix)[0]
+                raw_summaries.append(planner.summary.raw(
+                    represented, (float(target[0]), float(target[1])), radius, progress,
+                    assume_finite_counts=True))
+                vectors.append(planner.summary.vector(
+                    represented, (float(target[0]), float(target[1])), radius, progress,
+                    assume_finite_counts=True).reshape(-1))
+            for head in range(16):
+                planned = planner.plan(prefix, target_rel_at_B=(float(target[0]), float(target[1])),
+                                       target_radius=radius, progress_center=progress,
+                                       seed=2026, head=head)
+                intent = planned.intent
+                durations.append(intent.duration_ms)
+                heads.append(intent.head)
+                smooths.append(intent.smooth_dxdy[: intent.duration_ms].reshape(-1))
+            for seed in (0, 7, 23, 2026, 12345):
+                planned = planner.plan(prefix, target_rel_at_B=(float(target[0]), float(target[1])),
+                                       target_radius=radius, progress_center=progress, seed=seed)
+                heads.append(planned.intent.head)
+                durations.append(planned.intent.duration_ms)
+                smooths.append(planned.intent.smooth_dxdy[: planned.intent.duration_ms].reshape(-1))
+
+    arrays["prefixes"] = np.concatenate(prefixes)
+    arrays["prefix_lengths"] = np.array(lengths, np.int64)
+    arrays["targets"] = np.concatenate(targets)
+    arrays["radii"] = np.array(radii, np.float64)
+    arrays["progresses"] = np.array(progresses, np.float64)
+    arrays["raw_summaries"] = np.concatenate(raw_summaries)
+    arrays["vectors"] = np.concatenate(vectors)
+    arrays["durations"] = np.array(durations, np.int64)
+    arrays["heads"] = np.array(heads, np.int64)
+    arrays["smooth"] = np.concatenate(smooths)
+    del predictions
+    print(f"  {len(durations)} plans, {len(arrays['smooth']) // 2} smooth samples")
+    save("static_planner", **arrays)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("names", nargs="*")
