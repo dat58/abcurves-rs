@@ -1,0 +1,37 @@
+The model artifacts in this directory are released by the ABCurves project and are
+redistributed here unmodified, under the project's MIT License.
+
+    https://github.com/optima-manent/ABCurves
+
+MIT License
+
+Copyright (c) 2026 Optima Manent
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+The models were trained on the ABCurves movement datasets, which the project
+licenses under Creative Commons Attribution 4.0 International (CC BY 4.0).
+The dataset license asks that public projects and model cards carry this credit:
+
+    Uses ABCurves movement datasets by Optima Manent, licensed
+    under CC BY 4.0. https://github.com/optima-manent/ABCurves
+
+The files here are byte-for-byte copies of the upstream release. Their SHA-256
+digests are pinned in src/model_store.rs and src/renderer/model.rs, and the loader
+refuses anything that does not match.

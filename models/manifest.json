@@ -1,0 +1,133 @@
+{
+  "schema": "abcurves.release_models.v2",
+  "release": "2.0.0",
+  "default_seed": 7,
+  "seeds": [
+    7,
+    23
+  ],
+  "pipeline": "Continuous Planner or Static Planner + global whole-session Renderer; explicit units, 1ms output and persistent stream or finite-event state",
+  "renderer": {
+    "scope": "global whole-session count texture",
+    "corpus": "P0 full cohort",
+    "training_seed": 7,
+    "training_windows": 81737,
+    "training_sessions": 54,
+    "training_users": 45,
+    "validation_windows": 10807,
+    "validation_sessions": 8,
+    "validation_users": 8,
+    "split_seed": "abcurves.continuous_v1.user_split",
+    "presentation_budget": 118345,
+    "optimizer_steps": 463,
+    "passes_over_training_windows": 1.4478755031,
+    "optimizer": "Adam",
+    "weight_decay": 1e-05,
+    "sampler": "frozen_epoch_view_sampler_v1",
+    "deterministic_algorithms": true,
+    "context_ticks": 256,
+    "float_recurrent_warm_ticks": 128,
+    "future_ticks": 800,
+    "features": 20,
+    "hidden": 80,
+    "joint_offset_classes": 121,
+    "teacher_base_hysteresis": 1.0,
+    "deployment_base_hysteresis": 0.5,
+    "training_smoothing": [
+      "triangular_moving_average_path:window=3",
+      "triangular_moving_average_path:window=5"
+    ],
+    "deployment_smoothing": "triangular_moving_average_path:window=5",
+    "lateral_offset_penalty": 1.5,
+    "zero_intent_threshold_float": 1e-07,
+    "zero_intent_threshold_q16": 0,
+    "zero_accumulator_threshold": 0.5,
+    "safety_release_threshold": 32.0,
+    "maximum_axis_emission_counts": 32767,
+    "lateral_offset_penalty_law": "offset_logit -= 1.5 * max(abs(offset dot normal) - 1 count, 0)",
+    "generation_core": "int8/fixed-point",
+    "observer_and_begin": "mixed float/double",
+    "online_handoff_rank": 16,
+    "windows_x64_caller_state_bytes": 5088,
+    "windows_x64_model_view_bytes": 208,
+    "target_size_contract": "query abc_online_renderer_size() and abc_online_model_size() on the target ABI",
+    "generated_tick_int8_macs": 33760,
+    "handoff_contract": "prepare exactly 256 representative observations before B, copy the prepared profile for each event, then begin once; exact per-event replay remains supported",
+    "profile_schedule_evidence": "one-draw Renderer-only engineering sensitivity check; not promotion, equivalence, or composed-pipeline evidence",
+    "selection": "sampled carried full-session texture; teacher-forced loss is diagnostic only",
+    "promotion_receipt": "results/inference/renderer_promotion.json",
+    "profile_sensitivity_receipt": "results/inference/renderer_profile_sensitivity.json",
+    "native_benchmark_receipt": "results/inference/native_renderer_windows_x64.json",
+    "promotion_validation": {
+      "panel": "eight carried sessions",
+      "panel_scope": "non-protected development panel",
+      "sessions": 8,
+      "users": 8,
+      "future_ticks": 11414503,
+      "segments": 22291,
+      "model_training_seed": 7,
+      "renderer_draw_seed": 7001,
+      "metric": "S = Texture19_W1/0.05 + packet_ratio_error/log(1.05) + false_zero_activation/0.001 + relative_session_net_displacement_error/0.01; lower is better",
+      "float_source": 1.4311797,
+      "fixed_online": 1.4328467,
+      "relative_change_percent": 0.11648,
+      "handoff_equivalence": "same fixed model with reference warm replay",
+      "compared_output_components": 22829006,
+      "differing_components": 8,
+      "maximum_absolute_difference_counts": 1
+    },
+    "source_float_container_sha256": "e9951a9bc25b69bf652cebbca8749badd02b8c0675a5f1ad4cde7f1a8624132a",
+    "clean_float_export": "renderer_global_h80_float.pt",
+    "clean_float_tensor_sha256": "d09a4a269be583eac6e123bf6be9226bf8ee8e1c9fa8f51faed243b965187206",
+    "selected_corpus_logical_float32_sha256": {
+      "train_prefix": "82bffe0f3c76c072468740e84f62defb2e1daea78b4f2cdc3ee07be07c526908",
+      "train_future": "4acce5e30331c4b8f1866b1cb263a6ea8fddf2b773960d0d04c81aea3b8dab4b",
+      "val_prefix": "93c90094d9bc98d9861ff07b152d4c26b7e1a4aadcc31c7c627e83895e960969",
+      "val_future": "f0c7e3b9b765a82ac57d53224a20d04a631702cbca5539a126f6f5c32c31e342"
+    }
+  },
+  "native_libraries": {
+    "abcurves/_native/abcurves_renderer.dll": {
+      "platform": "Windows x64",
+      "bytes": 37888,
+      "sha256": "2f3b9c360def7817fd621658845831c96559f64da47b044d4ad5a0319bdc3719",
+      "public_exports": 8,
+      "reproducible_link": "MSVC /Brepro"
+    }
+  },
+  "files": {
+    "planner_seed7.pt": {
+      "bytes": 1500345,
+      "sha256": "d82c93071224f7eb225d1f2bcf46d52669a7270db414431d7622e032439b280d",
+      "tensor_sha256": "78b6d104f9877b846fd3edd0d833a3d5a72167591b56e00b09dd6b9d0e0d3795"
+    },
+    "planner_seed23.pt": {
+      "bytes": 1500389,
+      "sha256": "d691ba155c4fa9b403c5a3e2ed9c44123fe00d3d1bee15c55ee9226f4531a23e",
+      "tensor_sha256": "5d05a4aaf9afee66ccccfb13ea499e8fb796d017ed8f97b227fd6a58a77d7877"
+    },
+    "renderer_global_h80.bin": {
+      "bytes": 44484,
+      "sha256": "405c34bceb55485dfd6bd3c0368bce079feea680a64c6b261904ef5b4713e240",
+      "format": "ABCFIX1 off-row base followed by OHV1R16 online handoff adapter",
+      "base_bytes": 39512,
+      "adapter_bytes": 4972
+    },
+    "renderer_global_h80_float.pt": {
+      "bytes": 144457,
+      "sha256": "dd10ebe7d08011d7dbd91736e54a84faec4844f69a911a9dfd57eb83cd8b5e5c",
+      "tensor_sha256": "d09a4a269be583eac6e123bf6be9226bf8ee8e1c9fa8f51faed243b965187206",
+      "source_container_sha256": "e9951a9bc25b69bf652cebbca8749badd02b8c0675a5f1ad4cde7f1a8624132a",
+      "format": "sanitized phase-free 20-feature active float graph"
+    }
+  },
+  "default_planner_family": "continuous",
+  "continuous_manifest": "continuous/manifest.json",
+  "static_model_selection": {
+    "default_seed": 7,
+    "seeds": [
+      7,
+      23
+    ]
+  }
+}

@@ -36,21 +36,25 @@ composes the planner with the Renderer and returns integer hardware reports;
 
 ## Models
 
-The crate reads the official release artifacts; it does not redistribute them. Populate
-`./models` once from a checkout of the upstream project:
+The release models are bundled under `models/` (4.7 MB), so a clone runs with nothing
+else installed. Lookup order is `ABCURVES_MODEL_DIR`, then `./models`, then
+`./origin/ABCurves/models`.
 
-```bash
-git clone https://github.com/optima-manent/ABCurves.git
-scripts/fetch_models.sh ABCurves/models
-```
+They are byte-for-byte copies of the upstream release, redistributed under its MIT
+license; see [`models/LICENSE-ABCurves`](models/LICENSE-ABCurves) and the attribution
+below. Their SHA-256 digests are pinned in the loader, which refuses anything that does
+not match.
 
-That copies the twelve files this crate needs (4.7 MB) and re-checks them against the
-same SHA-256 anchors the loader enforces. Afterwards everything resolves on its own:
-model lookup tries `ABCURVES_MODEL_DIR`, then `./models`, then `./origin/ABCurves/models`.
+Twelve files are carried: both Planner checkpoints, the Renderer image, the continuous
+weight archive, the two manifests and the six ONNX graphs. The ONNX graphs are present
+because the continuous manifest declares them and the integrity check hashes every
+declared file — this crate never evaluates them. The research float checkpoint and the
+export-source `.pt` files are not carried, so a few entries in
+[`models/README.md`](models/README.md) refer to files that are only in the upstream
+project.
 
-The six ONNX graphs are copied because the continuous manifest declares them and the
-integrity check hashes every declared file; this crate never evaluates them. The
-research float checkpoint and the export-source `.pt` files are not needed.
+`scripts/fetch_models.sh` refreshes `models/` from an upstream checkout and re-verifies
+the anchors, which is useful when upstream publishes a new release.
 
 ## Examples
 
@@ -143,4 +147,17 @@ cargo bench
 
 ## License
 
-MIT.
+This crate is MIT licensed.
+
+The models under `models/` are the ABCurves release artifacts, redistributed unmodified
+under that project's MIT license, with its copyright notice preserved in
+[`models/LICENSE-ABCurves`](models/LICENSE-ABCurves).
+
+> Release models by Optima Manent, from
+> [ABCurves](https://github.com/optima-manent/ABCurves), MIT licensed.
+>
+> Uses ABCurves movement datasets by Optima Manent, licensed under CC BY 4.0.
+> https://github.com/optima-manent/ABCurves
+
+The recorded inputs under `examples/data/` and the reference vectors under
+`tests/golden/` likewise derive from that project's CC BY 4.0 datasets.
