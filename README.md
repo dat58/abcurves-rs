@@ -34,8 +34,23 @@ Times are microseconds from initialization and `xy` holds absolute positions at 
 composes the planner with the Renderer and returns integer hardware reports;
 `StaticPipeline` performs one finite B→C continuation.
 
-Models are found through `ABCURVES_MODEL_DIR`, then `./models`, then
-`./origin/ABCurves/models`.
+## Models
+
+The crate reads the official release artifacts; it does not redistribute them. Populate
+`./models` once from a checkout of the upstream project:
+
+```bash
+git clone https://github.com/optima-manent/ABCurves.git
+scripts/fetch_models.sh ABCurves/models
+```
+
+That copies the twelve files this crate needs (4.7 MB) and re-checks them against the
+same SHA-256 anchors the loader enforces. Afterwards everything resolves on its own:
+model lookup tries `ABCURVES_MODEL_DIR`, then `./models`, then `./origin/ABCurves/models`.
+
+The six ONNX graphs are copied because the continuous manifest declares them and the
+integrity check hashes every declared file; this crate never evaluates them. The
+research float checkpoint and the export-source `.pt` files are not needed.
 
 ## Examples
 
