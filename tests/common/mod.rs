@@ -43,3 +43,109 @@ pub fn models_root() -> PathBuf {
         .join("ABCurves")
         .join("models")
 }
+
+pub fn legacy_uniforms(seed: u32, count: usize) -> Vec<f64> {
+    let mut generator = abcurves::rng::Mt19937::new(seed);
+    (0..count)
+        .map(|_| {
+            let high = f64::from(generator.next_u32() >> 5);
+            let low = f64::from(generator.next_u32() >> 6);
+            (high * 67_108_864.0 + low) / 9_007_199_254_740_992.0
+        })
+        .collect()
+}
+
+pub const CASE_UNIFORMS: usize = 5376;
+pub const CASES: usize = 32;
+pub const CASE_CUT_US: i64 = 1_000_000;
+
+pub struct Case {
+    pub history: Vec<[f64; 2]>,
+    pub target: Vec<[f64; 2]>,
+    pub available: Vec<i64>,
+    pub valid: Vec<bool>,
+    pub motion_known: Vec<bool>,
+    pub position: [f64; 2],
+    pub hold_age: f64,
+    pub hold_target: [f64; 2],
+    pub hold_position: [f64; 2],
+    pub initial_error: f64,
+    pub innovation_age: f64,
+    pub mode: u8,
+    pub brake_velocity: [f64; 2],
+    pub brake_acceleration: [f64; 2],
+    pub brake_duration: f64,
+    pub brake_age: f64,
+    pub coefficients: Vec<f32>,
+    pub brake_coefficients: [[f64; 2]; 5],
+    pub previous: Vec<f32>,
+}
+
+pub fn build_case(seed: u32) -> Case {
+    let u = legacy_uniforms(seed, CASE_UNIFORMS);
+    let mut history = Vec::with_capacity(640);
+    let mut target = Vec::with_capacity(640);
+    for index in 0..640 {
+        history.push([
+            (u[index * 2] - 0.5) * 8.0,
+            (u[index * 2 + 1] - 0.5) * 8.0,
+        ]);
+        target.push([
+            (u[1280 + index * 2] - 0.5) * 300.0,
+            (u[1280 + index * 2 + 1] - 0.5) * 300.0,
+        ]);
+    }
+    let mut valid: Vec<bool> = (0..640).map(|index| u[2560 + index] > 0.25).collect();
+    let mut motion_known: Vec<bool> = (0..640).map(|index| u[3200 + index] > 0.1).collect();
+    let available: Vec<i64> = (0..640)
+        .map(|index| {
+            CASE_CUT_US + (index as i64 - 639) * 1000
+                - ((u[3840 + index] - 0.45) * 4000.0).round_ties_even() as i64
+        })
+        .collect();
+
+    if seed % 3 == 1 {
+        target[511][0] = f64::NAN;
+    }
+    if seed % 3 == 2 {
+        target[500][1] = f64::INFINITY;
+        valid.iter_mut().for_each(|slot| *slot = true);
+    }
+    if seed == 0 {
+        history.iter_mut().for_each(|row| *row = [0.0, 0.0]);
+        valid.iter_mut().for_each(|slot| *slot = false);
+        motion_known.iter_mut().for_each(|slot| *slot = false);
+    }
+    if seed == 1 {
+        valid.iter_mut().for_each(|slot| *slot = true);
+        motion_known.iter_mut().for_each(|slot| *slot = true);
+        history.iter_mut().for_each(|row| *row = [0.0, 0.0]);
+    }
+
+    Case {
+        history,
+        target,
+        available,
+        valid,
+        motion_known,
+        position: [(u[4480] - 0.5) * 200.0, (u[4481] - 0.5) * 200.0],
+        hold_age: u[4482] * 6000.0,
+        hold_target: [(u[4483] - 0.5) * 300.0, (u[4484] - 0.5) * 300.0],
+        hold_position: [(u[4485] - 0.5) * 300.0, (u[4486] - 0.5) * 300.0],
+        initial_error: u[4487] * 400.0,
+        innovation_age: u[4488] * 4000.0,
+        mode: (u[4489] * 3.0) as u8,
+        brake_velocity: [(u[4490] - 0.5) * 6.0, (u[4491] - 0.5) * 6.0],
+        brake_acceleration: [(u[4492] - 0.5) * 0.5, (u[4493] - 0.5) * 0.5],
+        brake_duration: 4.0 + u[4494] * 188.0,
+        brake_age: u[4495] * 200.0,
+        coefficients: (0..672).map(|index| ((u[4608 + index] - 0.5) * 2.0) as f32).collect(),
+        brake_coefficients: std::array::from_fn(|row| {
+            [
+                (u[5280 + row * 2] - 0.5) * 40.0,
+                (u[5280 + row * 2 + 1] - 0.5) * 40.0,
+            ]
+        }),
+        previous: (0..32).map(|index| ((u[5290 + index] - 0.5) * 4.0) as f32).collect(),
+    }
+}

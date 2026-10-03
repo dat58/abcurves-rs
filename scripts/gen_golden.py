@@ -181,6 +181,82 @@ def artifacts():
     )
 
 
+@generator("continuous_kernels")
+def continuous_kernels():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from _cases import CASES, build_case
+
+    from abcurves._continuous import native
+    from abcurves._continuous.kernels import decode_geometry, decode_selected, decoder_geometry
+
+    with np.load(ORIGIN / "models" / "continuous" / "weights.npz", allow_pickle=False) as bundle:
+        velocity_basis = bundle["motor.velocity_basis"]
+        carry_velocity = bundle["motor.carry_velocity"]
+    mean_basis, mean_carry = decoder_geometry(velocity_basis, carry_velocity)
+
+    coarse, fine, dynamics = [], [], []
+    raw, context, basis = [], [], []
+    heads, geometry, pairs, selected, brake = [], [], [], [], []
+
+    for seed in range(CASES):
+        case = build_case(seed)
+        c, f, d = native.motor_features(
+            case["history"], case["position"], case["target"], case["available"],
+            case["valid"], case["motion_known"], case["cut_us"])
+        coarse.append(c.reshape(-1))
+        fine.append(f.reshape(-1))
+        dynamics.append(d.reshape(-1))
+
+        r, x, b = native.event_features(
+            case["history"], case["position"], case["target"], case["available"],
+            case["valid"], case["motion_known"], case["cut_us"], case["hold_age"],
+            case["hold_target"], case["hold_position"], case["initial_error"],
+            case["innovation_age"], case["mode"])
+        raw.append(r.reshape(-1))
+        context.append(x.reshape(-1))
+        basis.append(b.reshape(-1))
+
+        incoming = case["history"][-1]
+        head_geometry = decode_geometry(case["coefficients"], incoming, mean_basis, mean_carry)
+        heads.append(head_geometry.reshape(-1))
+
+        previous = case["previous"] if seed % 2 else None
+        actual = np.asarray([0.5, -0.25], np.float32) if seed % 2 else None
+        unary, pair = native.selector_inputs(
+            np.zeros(96, np.float32), head_geometry,
+            np.zeros((16, 2), np.float32) if previous is None else previous,
+            np.zeros(2, np.float32) if actual is None else actual,
+            previous is not None)
+        geometry.append(np.ascontiguousarray(unary[0, :, 96:]).reshape(-1))
+        pairs.append(pair.reshape(-1))
+
+        selected.append(decode_selected(
+            case["coefficients"][seed % 16], incoming,
+            velocity_basis[:32], carry_velocity[:32]).reshape(-1))
+
+        times = case["brake_age"] + np.arange(33, dtype=np.float64)
+        brake.append(native.c2_path(
+            case["brake_velocity"], case["brake_acceleration"], case["brake_duration"],
+            case["brake_coefficients"], times).reshape(-1))
+
+    save(
+        "continuous_kernels",
+        coarse=np.concatenate(coarse),
+        fine=np.concatenate(fine),
+        dynamics=np.concatenate(dynamics),
+        raw=np.concatenate(raw),
+        context=np.concatenate(context),
+        basis=np.concatenate(basis),
+        heads=np.concatenate(heads),
+        geometry=np.concatenate(geometry),
+        pairs=np.concatenate(pairs),
+        selected=np.concatenate(selected),
+        brake=np.concatenate(brake),
+        mean_basis=mean_basis.reshape(-1),
+        mean_carry=mean_carry.reshape(-1),
+    )
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("names", nargs="*")
