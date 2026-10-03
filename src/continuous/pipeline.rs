@@ -107,6 +107,16 @@ impl From<Error> for PipelineError {
     }
 }
 
+/// Drops the partial output; match on `PipelineError` to keep it.
+impl From<PipelineError> for Error {
+    fn from(value: PipelineError) -> Self {
+        match value {
+            PipelineError::Contract(error) => error,
+            PipelineError::Failed(failure) => Error::Numerical(failure.message),
+        }
+    }
+}
+
 pub struct PipelineOptions {
     pub planner: ContinuousOptions,
     pub transform: CountTransform,

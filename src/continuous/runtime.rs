@@ -48,6 +48,19 @@ impl From<Error> for AdvanceError {
     }
 }
 
+/// Drops the partial output; match on `AdvanceError` to keep it.
+impl From<AdvanceError> for Error {
+    fn from(value: AdvanceError) -> Self {
+        match value {
+            AdvanceError::Contract(error) => error,
+            AdvanceError::Failed(failure) => Error::Numerical(format!(
+                "Policy action failed at {} us: {}",
+                failure.at_us, failure.message
+            )),
+        }
+    }
+}
+
 pub struct MovementRuntime {
     planner: Planner,
     initial_xy: [f64; 2],

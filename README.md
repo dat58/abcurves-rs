@@ -37,6 +37,19 @@ composes the planner with the Renderer and returns integer hardware reports;
 Models are found through `ABCURVES_MODEL_DIR`, then `./models`, then
 `./origin/ABCurves/models`.
 
+## Examples
+
+Five runnable examples mirror the ones in the Python project. The recorded inputs they
+read are bundled under `examples/data/`, so only the release models are needed.
+
+```bash
+cargo run --release --example quickstart        # continuous stream, moving target
+cargo run --release --example streaming         # composed planner and renderer
+cargo run --release --example assisted_start    # continue from real human history
+cargo run --release --example static_quickstart # seam trigger, then one B to C finish
+cargo run --release --example static_streaming  # the same finish, one report per tick
+```
+
 ## Numerical agreement
 
 Every component is checked against vectors generated from the Python origin

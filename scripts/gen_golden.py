@@ -26,9 +26,9 @@ DTYPE_SUFFIX = {
 }
 
 
-def save(fixture, **arrays):
+def save(fixture, base=None, **arrays):
     """Write each array as a flat little-endian blob named <key>.<dtype>."""
-    folder = GOLDEN / fixture
+    folder = (base or GOLDEN) / fixture
     folder.mkdir(parents=True, exist_ok=True)
     for stale in folder.iterdir():
         stale.unlink()
@@ -686,6 +686,29 @@ def static_pipeline():
     print(f"  {len(report_counts)} continuations, {len(arrays['reports']) // 2} reports")
     save("static_pipeline", **arrays)
     save("static_pipeline_arm", **arm_arrays)
+
+
+@generator("example_data")
+def example_data():
+    """Bundle the recorded inputs the Rust examples read."""
+    folder = ROOT / "examples" / "data"
+    with np.load(ORIGIN / "examples" / "data" / "human_start.npz", allow_pickle=False) as data:
+        save(
+            "human_start", folder,
+            raw_common=np.asarray(data["raw_common"], np.float64).reshape(-1),
+            observed_xy=np.asarray(data["observed_xy"], np.float64),
+            target_xy=np.asarray(data["target_xy"], np.float64),
+            profile_hardware=np.asarray(data["profile_hardware"], np.int16).reshape(-1),
+            radians_per_count=np.asarray([float(data["radians_per_count"])], np.float64),
+        )
+    with np.load(ORIGIN / "examples" / "data" / "static_event.npz", allow_pickle=False) as data:
+        save(
+            "static_event", folder,
+            raw_dxdy=np.asarray(data["raw_dxdy"], np.int16).reshape(-1),
+            profile_before_a=np.asarray(data["profile_before_a"], np.int16).reshape(-1),
+            target_rel_a=np.asarray(data["target_rel_a"], np.float64),
+            target_radius=np.asarray([float(data["target_radius"])], np.float64),
+        )
 
 
 def main():
