@@ -257,6 +257,71 @@ def continuous_kernels():
     )
 
 
+@generator("continuous_neural")
+def continuous_neural():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from _cases import CASES, build_case, build_encoded
+
+    from abcurves._continuous import native
+    from abcurves._continuous.kernels import decode_geometry, decoder_geometry
+    from abcurves._continuous.neural_native import NativeHeads, NativeMotor
+
+    with np.load(ORIGIN / "models" / "continuous" / "weights.npz", allow_pickle=False) as bundle:
+        arrays = {name: bundle[name] for name in bundle.files}
+    mean_basis, mean_carry = decoder_geometry(
+        arrays["motor.velocity_basis"], arrays["motor.carry_velocity"])
+    motor = NativeMotor(arrays, "pade9_vector")
+    heads = NativeHeads(arrays, activation="exact")
+
+    encoded, coefficients, logits = [], [], []
+    duration, brake_coefficients, frequency, hazard = [], [], [], []
+
+    for seed in range(CASES):
+        case = build_case(seed)
+        coarse, fine, dynamics = native.motor_features(
+            case["history"], case["position"], case["target"], case["available"],
+            case["valid"], case["motion_known"], case["cut_us"])
+        out_encoded, out_coefficients = motor.motor(coarse, fine, dynamics)
+        encoded.append(out_encoded.reshape(-1).copy())
+        coefficients.append(out_coefficients.reshape(-1).copy())
+
+        _, context, _ = native.event_features(
+            case["history"], case["position"], case["target"], case["available"],
+            case["valid"], case["motion_known"], case["cut_us"], case["hold_age"],
+            case["hold_target"], case["hold_position"], case["initial_error"],
+            case["innovation_age"], case["mode"])
+        d, c, f, h = heads.events(context)
+        duration.append(d.copy())
+        brake_coefficients.append(c.reshape(-1).copy())
+        frequency.append(f.copy())
+        hazard.append(h.copy())
+
+        head_geometry = decode_geometry(
+            case["coefficients"], case["history"][-1], mean_basis, mean_carry)
+        previous = case["previous"] if seed % 2 else None
+        actual = np.asarray([0.5, -0.25], np.float32) if seed % 2 else None
+        unary, pairs = native.selector_inputs(
+            np.zeros(96, np.float32), head_geometry,
+            np.zeros((16, 2), np.float32) if previous is None else previous,
+            np.zeros(2, np.float32) if actual is None else actual,
+            previous is not None)
+        synthetic = build_encoded(seed).reshape(1, 96)
+        out_logits = heads.choice(
+            synthetic, np.ascontiguousarray(unary[:, :, 96:]), pairs, previous is not None)
+        logits.append(out_logits.copy())
+
+    save(
+        "continuous_neural",
+        encoded=np.concatenate(encoded),
+        coefficients=np.concatenate(coefficients),
+        logits=np.concatenate(logits),
+        duration=np.concatenate(duration),
+        brake_coefficients=np.concatenate(brake_coefficients),
+        frequency=np.concatenate(frequency),
+        hazard=np.concatenate(hazard),
+    )
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("names", nargs="*")

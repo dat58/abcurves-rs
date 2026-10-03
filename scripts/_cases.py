@@ -54,3 +54,11 @@ def build_case(seed):
         "brake_coefficients": ((u[5280:5290] - 0.5) * 40.0).reshape(5, 2),
         "previous": ((u[5290:5322] - 0.5) * 4.0).astype(np.float32).reshape(16, 2),
     }
+
+
+def extra_uniforms(seed, count):
+    return np.random.RandomState(seed + 1000).random_sample(count)
+
+
+def build_encoded(seed):
+    return ((extra_uniforms(seed, 96) - 0.5) * 4.0).astype(np.float32)

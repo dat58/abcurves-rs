@@ -149,3 +149,24 @@ pub fn build_case(seed: u32) -> Case {
         previous: (0..32).map(|index| ((u[5290 + index] - 0.5) * 4.0) as f32).collect(),
     }
 }
+
+pub fn build_encoded(seed: u32) -> Vec<f32> {
+    legacy_uniforms(seed + 1000, 96)
+        .into_iter()
+        .map(|value| ((value - 0.5) * 4.0) as f32)
+        .collect()
+}
+
+pub fn relative_drift(actual: &[f32], expected: &[f32], label: &str) -> f32 {
+    assert_eq!(actual.len(), expected.len(), "{label} length");
+    let mut worst = 0.0f32;
+    let scale = expected
+        .iter()
+        .fold(0.0f32, |peak, value| peak.max(value.abs()))
+        .max(1e-6);
+    for (lane, (&left, &right)) in actual.iter().zip(expected).enumerate() {
+        assert!(left.is_finite(), "{label} lane {lane} is not finite");
+        worst = worst.max((left - right).abs() / scale);
+    }
+    worst
+}
