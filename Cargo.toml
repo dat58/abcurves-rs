@@ -21,6 +21,10 @@ sha2 = "0.10"
 default = []
 candle = ["dep:candle-core"]
 
+[[bench]]
+name = "runtime"
+harness = false
+
 [profile.release]
 opt-level = 3
 lto = "fat"

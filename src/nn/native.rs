@@ -1,5 +1,6 @@
 use super::activation::{silu_exact, silu_pade9};
-use super::linear::{matmul, matvec};
+use super::activation::{sigmoid_pade9, tanh_pade9};
+use super::linear::{accumulate_outer, add_bias_rows, matmul, matvec};
 use crate::continuous::constants::*;
 use crate::error::{Error, Result};
 use crate::io::Npz;
@@ -232,12 +233,7 @@ impl NativeEngine {
         let space = &mut self.motor_workspace;
 
         matmul(coarse, TOKENS, 9, &weights.input_weight, HIDDEN, &mut space.tokens);
-        for row in 0..TOKENS {
-            for column in 0..HIDDEN {
-                let value = space.tokens[row * HIDDEN + column] + weights.input_bias[column];
-                space.tokens[row * HIDDEN + column] = silu_pade9(value);
-            }
-        }
+        silu_rows(&mut space.tokens, &weights.input_bias, HIDDEN);
         matmul(
             &space.tokens,
             TOKENS,
@@ -246,35 +242,20 @@ impl NativeEngine {
             GATES,
             &mut space.projected,
         );
-        for row in 0..TOKENS {
-            for column in 0..GATES {
-                space.projected[row * GATES + column] += weights.input_gate_bias[column];
-            }
-        }
+        add_bias_rows(&mut space.projected, &weights.input_gate_bias, GATES);
         space.hidden.fill(0.0);
         for row in 0..TOKENS {
             space.recurrent.copy_from_slice(&weights.recurrent_bias);
-            for incoming in 0..HIDDEN {
-                let value = space.hidden[incoming];
-                let lane = &weights.recurrent_transpose[incoming * GATES..(incoming + 1) * GATES];
-                for column in 0..GATES {
-                    space.recurrent[column] += value * lane[column];
-                }
-            }
-            let projected = &space.projected[row * GATES..(row + 1) * GATES];
-            for column in 0..HIDDEN {
-                let reset = super::activation::sigmoid_pade9(
-                    projected[column] + space.recurrent[column],
-                );
-                let update = super::activation::sigmoid_pade9(
-                    projected[HIDDEN + column] + space.recurrent[HIDDEN + column],
-                );
-                let candidate = super::activation::tanh_pade9(
-                    projected[2 * HIDDEN + column] + reset * space.recurrent[2 * HIDDEN + column],
-                );
-                space.hidden[column] =
-                    candidate + (space.hidden[column] - candidate) * update;
-            }
+            accumulate_recurrent(
+                &space.hidden,
+                &weights.recurrent_transpose,
+                &mut space.recurrent,
+            );
+            gru_gates(
+                &space.projected[row * GATES..(row + 1) * GATES],
+                &space.recurrent,
+                &mut space.hidden,
+            );
         }
         space.combined[..HIDDEN].copy_from_slice(&space.hidden);
         space.combined[HIDDEN..HIDDEN + FINE_LEN].copy_from_slice(fine);
@@ -286,10 +267,7 @@ impl NativeEngine {
             &space.combined,
             &mut self.encoded,
         );
-        for column in 0..HIDDEN {
-            let value = self.encoded[column] + weights.trunk_bias[column];
-            self.encoded[column] = silu_pade9(value);
-        }
+        silu_rows(&mut self.encoded, &weights.trunk_bias, HIDDEN);
         matvec(
             &weights.output_weight,
             COEFFICIENTS,
@@ -443,6 +421,33 @@ impl NativeEngine {
         let mut hazard = [0.0f32; 2];
         self.hazard(context, &mut hazard);
         out.hazard = hazard;
+    }
+}
+
+#[inline]
+fn silu_rows(values: &mut [f32], bias: &[f32], columns: usize) {
+    for row in values.chunks_exact_mut(columns) {
+        for column in 0..columns {
+            row[column] = silu_pade9(row[column] + bias[column]);
+        }
+    }
+}
+
+fn accumulate_recurrent(hidden: &[f32], weights: &[f32], recurrent: &mut [f32]) {
+    accumulate_outer(&hidden[..HIDDEN], weights, GATES, &mut recurrent[..GATES]);
+}
+
+fn gru_gates(projected: &[f32], recurrent: &[f32], hidden: &mut [f32]) {
+    let hidden = &mut hidden[..HIDDEN];
+    let projected = &projected[..GATES];
+    let recurrent = &recurrent[..GATES];
+    for column in 0..HIDDEN {
+        let reset = sigmoid_pade9(projected[column] + recurrent[column]);
+        let update = sigmoid_pade9(projected[HIDDEN + column] + recurrent[HIDDEN + column]);
+        let candidate = tanh_pade9(
+            projected[2 * HIDDEN + column] + reset * recurrent[2 * HIDDEN + column],
+        );
+        hidden[column] = candidate + (hidden[column] - candidate) * update;
     }
 }
 
