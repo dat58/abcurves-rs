@@ -411,6 +411,41 @@ def continuous_stream():
     save("continuous_stream", **arrays)
 
 
+@generator("renderer")
+def renderer():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from _cases import renderer_script, renderer_script_wide
+
+    from abcurves.portable_renderer import PortableRendererModel
+
+    model = PortableRendererModel(ORIGIN / "models" / "renderer_global_h80.bin")
+    with np.load(ORIGIN / "examples" / "data" / "human_start.npz", allow_pickle=False) as data:
+        human = np.asarray(data["profile_hardware"], np.int16)
+
+    synthetic = np.zeros((256, 2), np.int16)
+    synthetic[:, 0] = np.arange(256) & 1
+    zeros = np.zeros((256, 2), np.int16)
+
+    contexts = {"synthetic": synthetic, "human": human, "zeros": zeros}
+    scenarios = [
+        ("synthetic", 123, np.tile(np.asarray([1.0, 0.5], np.float32), (16, 1))),
+        ("human", 101, renderer_script(3001, 1500)),
+        ("human", 29, renderer_script(3002, 600)),
+        ("zeros", 11, renderer_script_wide(3003, 800)),
+        ("human", 2026, renderer_script_wide(3004, 400)),
+    ]
+
+    arrays = {"human_profile": human.reshape(-1)}
+    for index, (context, seed, script) in enumerate(scenarios):
+        profile = model.prepare_context(contexts[context])
+        stream = profile.begin_stream(event_seed=seed)
+        reports = np.array([stream.step(row) for row in script], np.int16)
+        arrays[f"r{index}_reports"] = reports.reshape(-1)
+        print(f"  scenario {index}: {context} seed {seed}, {len(script)} steps, "
+              f"{int((reports != 0).any(axis=1).sum())} emitted")
+    save("renderer", **arrays)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("names", nargs="*")

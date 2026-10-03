@@ -62,3 +62,13 @@ def extra_uniforms(seed, count):
 
 def build_encoded(seed):
     return ((extra_uniforms(seed, 96) - 0.5) * 4.0).astype(np.float32)
+
+
+def renderer_script(seed, count):
+    u = np.random.RandomState(seed).random_sample(count * 2)
+    return ((u - 0.5) * 6.0).astype(np.float32).reshape(count, 2)
+
+
+def renderer_script_wide(seed, count):
+    u = np.random.RandomState(seed).random_sample(count * 2)
+    return ((u - 0.5) * 2000.0).astype(np.float32).reshape(count, 2)

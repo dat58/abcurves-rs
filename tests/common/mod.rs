@@ -170,3 +170,15 @@ pub fn relative_drift(actual: &[f32], expected: &[f32], label: &str) -> f32 {
     }
     worst
 }
+
+pub fn renderer_script(seed: u32, count: usize, scale: f64) -> Vec<[f32; 2]> {
+    let u = legacy_uniforms(seed, count * 2);
+    (0..count)
+        .map(|step| {
+            [
+                ((u[step * 2] - 0.5) * scale) as f32,
+                ((u[step * 2 + 1] - 0.5) * scale) as f32,
+            ]
+        })
+        .collect()
+}
