@@ -322,6 +322,95 @@ def continuous_neural():
     )
 
 
+def _run_scenario(abcurves, spec, diagnostics):
+    movement = abcurves.load(
+        seed=spec["seed"], initial_xy=spec["initial_xy"],
+        history=spec.get("history"), diagnostics=diagnostics)
+    times, points = [], []
+    for operation in spec["script"]:
+        if operation[0] == "target":
+            movement.update_target(operation[1], timestamp_us=operation[2])
+        else:
+            block = movement.advance(operation[1])
+            times.append(block["time_us"])
+            points.append(block["xy"])
+    choices = movement.planner.movement_choices if diagnostics else []
+    return (
+        np.concatenate(times) if times else np.zeros(0, np.int64),
+        np.concatenate(points) if points else np.zeros((0, 2), np.float64),
+        np.array([int(c["mode"][0]) for c in choices], np.int64),
+        np.array([int(c["head"][0]) for c in choices], np.int64),
+        np.array([float(c["at_ms"][0]) for c in choices], np.float64),
+    )
+
+
+def _scenarios(start):
+    quickstart = [
+        ("target", (100.0, 30.0), 0), ("advance", 32_000),
+        ("target", (125.0, 45.0), 40_000), ("advance", 64_000),
+        ("advance", 1_000_000),
+    ]
+    acquisition = [("target", (800.0, -200.0), 0)]
+    acquisition += [("advance", step * 8_000) for step in range(1, 751)]
+    acquisition += [("target", (300.0, 500.0), 6_000_000)]
+    acquisition += [("advance", 6_000_000 + step * 8_000) for step in range(1, 251)]
+    quiet = [
+        ("advance", 50_000),
+        ("target", (40.0, 40.0), 50_000), ("advance", 2_000_000),
+    ]
+    assisted = [
+        ("target", tuple(float(v) for v in start["target_xy"]), 0),
+        ("advance", 128_000), ("advance", 1_000_000),
+    ]
+    return [
+        {"seed": 2026, "initial_xy": (0.0, 0.0), "script": quickstart},
+        {"seed": 7, "initial_xy": (0.0, 0.0), "script": acquisition},
+        {"seed": 23, "initial_xy": (0.0, 0.0), "script": quiet},
+        {"seed": 2026, "initial_xy": tuple(float(v) for v in start["observed_xy"]),
+         "history": start["history"], "script": assisted},
+    ]
+
+
+@generator("continuous_stream")
+def continuous_stream():
+    import abcurves
+    from abcurves import prepare_history
+
+    with np.load(ORIGIN / "examples" / "data" / "human_start.npz", allow_pickle=False) as data:
+        fixture = {name: data[name] for name in data.files}
+    human = prepare_history(fixture["raw_common"], current_xy=fixture["observed_xy"])
+    # The bundled filtered arrays were written by an equivalent formulation.
+    np.testing.assert_allclose(human.history, fixture["filtered_history"], atol=1e-9)
+    np.testing.assert_allclose(human.initial_xy, fixture["filtered_xy"], atol=1e-9)
+
+    start = {
+        "history": human.history,
+        "observed_xy": human.observed_xy,
+        "target_xy": fixture["target_xy"],
+    }
+    arrays = {
+        "raw_common": fixture["raw_common"].reshape(-1),
+        "observed_xy": np.asarray(fixture["observed_xy"], np.float64),
+        "target_xy": np.asarray(fixture["target_xy"], np.float64),
+        "profile_hardware": fixture["profile_hardware"].reshape(-1),
+        "radians_per_count": np.asarray([float(fixture["radians_per_count"])], np.float64),
+        "filtered_history": human.history.reshape(-1),
+        "filtered_xy": np.asarray(human.initial_xy, np.float64),
+    }
+    for index, spec in enumerate(_scenarios(start)):
+        times, points, mode, head, at_ms = _run_scenario(abcurves, spec, True)
+        plain = _run_scenario(abcurves, spec, False)
+        np.testing.assert_array_equal(times, plain[0])
+        np.testing.assert_array_equal(points, plain[1])
+        arrays[f"s{index}_time"] = times
+        arrays[f"s{index}_xy"] = points.reshape(-1)
+        arrays[f"s{index}_mode"] = mode
+        arrays[f"s{index}_head"] = head
+        arrays[f"s{index}_at_ms"] = at_ms
+        print(f"  scenario {index}: {len(times)} samples, {len(mode)} decisions")
+    save("continuous_stream", **arrays)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("names", nargs="*")

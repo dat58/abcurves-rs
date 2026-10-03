@@ -18,3 +18,12 @@ pub fn exp_f32(value: f32) -> f32 {
 pub fn tanh_f32(value: f32) -> f32 {
     unsafe { tanhf(value) }
 }
+
+unsafe extern "C" {
+    fn logf(value: f32) -> f32;
+}
+
+#[inline]
+pub fn log_f32(value: f32) -> f32 {
+    unsafe { logf(value) }
+}
