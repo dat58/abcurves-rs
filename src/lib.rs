@@ -6,6 +6,7 @@ pub mod model_store;
 pub mod nn;
 pub mod renderer;
 pub mod rng;
+pub mod static_planner;
 
 pub use continuous::{
     Advance, AdvanceError, ContinuousOptions, ContinuousPipeline, CountTransform, HumanStart,

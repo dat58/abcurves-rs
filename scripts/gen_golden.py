@@ -492,6 +492,36 @@ def continuous_pipeline():
     save("continuous_pipeline", **arrays)
 
 
+@generator("prodmp")
+def prodmp():
+    from abcurves.planner import _CachedProDMP
+    from abcurves.prodmp import ProDMPConfig
+
+    basis = _CachedProDMP(ProDMPConfig(n_basis=20, alpha=25.0, alpha_phase=3.0, ridge=1e-3))
+    durations = [1, 2, 3, 5, 17, 64, 137, 256, 499, 1000]
+    xi1, xi2, h, deltas = [], [], [], []
+    rs = np.random.RandomState(4242)
+    for index, duration in enumerate(durations):
+        a, b, c = basis._canonical_components(duration)
+        xi1.append(a)
+        xi2.append(b)
+        h.append(c.reshape(-1))
+        weights = ((rs.random_sample(21 * 2) - 0.5) * 2.0e4).reshape(21, 2)
+        velocity = (rs.random_sample(2) - 0.5) * 40.0
+        deltas.append(basis.generate_deltas(weights, velocity, duration).reshape(-1))
+    sample = np.arange(0, 2001, 10)
+    save(
+        "prodmp",
+        s_grid=basis._s_grid[sample],
+        phi_grid=basis._phi_grid[sample].reshape(-1),
+        dphi_grid=basis._dphi_grid[sample].reshape(-1),
+        durations=np.array(durations, np.int64),
+        xi1=np.concatenate(xi1),
+        xi2=np.concatenate(xi2),
+        deltas=np.concatenate(deltas),
+    )
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("names", nargs="*")
