@@ -67,7 +67,14 @@ cargo run --release --example streaming         # composed planner and renderer
 cargo run --release --example assisted_start    # continue from real human history
 cargo run --release --example static_quickstart # seam trigger, then one B to C finish
 cargo run --release --example static_streaming  # the same finish, one report per tick
+cargo run --release --example continuous_to_point # type a target, watch it acquire
+cargo run --release --example static_to_point     # the same, with the wrong planner
 ```
+
+`continuous_to_point` and `static_to_point` both read a target from the keyboard and
+print every report. They exist as a pair: the first acquires the target and settles on
+it, the second shows what happens when the Static Planner is asked to start from
+standstill, which is outside the regime it was trained for.
 
 ## Numerical agreement
 
