@@ -35,37 +35,72 @@ composes the planner with the Renderer and returns integer hardware reports.
 
 ### The static handoff
 
-`StaticPipeline` continues a movement a person has already begun. Watch the real A→B
-motion with a `BTrigger`; when it fires it hands you every number the planner needs:
+`StaticPipeline` continues a movement a person has already begun. Give it where the
+movement started, where the target is, how big it is, and the reports observed so far:
 
 ```rust
-use abcurves::static_planner::{BEvent, BTrigger, Draw, Handoff, StaticPipeline};
+use abcurves::static_planner::{Draw, Movement, StaticPipeline};
 
+let movement = Movement::from_reports(a, target, radius, &observed);
+let reports = pipeline.continue_movement(&movement, &profile, Draw::seeded(2026))?;
+```
+
+B is the **last report supplied**. A to B is motion the mouse has already made, so it
+cannot be chosen after the fact; the library validates that point rather than picking
+its own. An unusable handoff is an error naming the rule it failed and by how much.
+
+`radius` is the "counted as a hit" radius in native counts, the target radius on screen
+divided by pixels per count. It is not decoration: the model reads it through
+`distance_over_radius`, `prefix_lateral / radius`, `speed_at_B / radius` and the
+edge-progress denominator, so it tells the model how precise it must be.
+
+#### The short-continuation floor
+
+Three rules in the frozen seam contract depend only on `|BC|`, the distance left at B,
+and the radius — whatever path was taken from A:
+
+| Rule | Constraint | 80% | 90% |
+| --- | --- | :-: | :-: |
+| `min_remaining_counts` | `\|BC\| >= 8` | yes | yes |
+| `require_outside_target` | `\|BC\| > radius` | yes | yes |
+| `min_edge_margin_counts` | `\|BC\| - radius >= 8` | no | yes |
+
+So a continuation with under 8 counts left cannot be planned at all; use the Continuous
+Planner, whose settling behaviour covers exactly that. Between those bounds the policy
+is chosen automatically, keeping the 90 percent recommendation when the geometry allows
+it and falling back to the 80 percent training contract when it does not.
+`Movement::eligible_remaining` reports the usable `|BC|` window up front, so you can
+plan the capture instead of discovering a refusal. `examples/static_simple.rs` sweeps
+it:
+
+```
+      BC     |BC|  policy  outcome
+   (4,4)     5.66       -  refused: |BC| is 5.66 counts, under the 8.0 the contract requires
+   (6,6)     8.49     80%  384 reports, travelling [6, 9]
+ (12,12)    16.97     90%  394 reports, travelling [14, 14]
+ (20,20)    28.28     90%  406 reports, travelling [21, 22]
+```
+
+#### When you do not know where B is
+
+A live application often has to be *told* when to take over. Drive a `BTrigger` instead,
+which fires at the first eligible crossing and hands you the same geometry:
+
+```rust
 let mut trigger = BTrigger::recommended();
 trigger.arm(target_rel_at_a, radius)?;
 
-for delta in &observed {
-    let target_now = [/* target_rel_at_a minus what has been travelled */];
-    if let Some(BEvent::Fire(fire)) = trigger.push_tick(dx, dy, target_now, radius)? {
-        let reports = pipeline.generate(
-            &prefix,                  // observed A to B bins, native counts
-            &profile,                 // prepared once from 256 genuine reports
-            Handoff::from(&fire),     // the geometry at B
-            Draw::seeded(2026),       // which head, which texture draw
-        )?;
-    }
+if let Some(BEvent::Fire(fire)) = trigger.push_tick(dx, dy, target_now, radius)? {
+    let reports =
+        pipeline.generate(&prefix, &profile, Handoff::from(&fire), Draw::seeded(2026))?;
 }
 ```
 
-`Handoff` groups the three numbers that describe B, and comes straight from `BFire`, so
-in the normal path you never assemble it by hand. Build one yourself with
-`Handoff::new` or `Handoff::from_observed` only when you establish B some other way.
-`Draw` groups the two seeds: `Draw::seeded(n)` uses one for both, `Draw::split(a, b)`
-separates them, and `.head(k)` pins a head instead of sampling.
-
-Model choice is separate again: it is the `model_seed` argument to
-`StaticPipeline::from_pretrained`, which picks between the two independently trained
-cells (7 and 23).
+`Handoff` groups the three numbers describing B and comes straight from `BFire`. `Draw`
+groups the two seeds: `Draw::seeded(n)` uses one for both, `Draw::split(a, b)` separates
+them, `.head(k)` pins a head instead of sampling. Model choice is separate again: the
+`model_seed` argument to `StaticPipeline::from_pretrained` picks between the two
+independently trained cells, 7 and 23.
 
 ## Models
 
@@ -100,6 +135,7 @@ cargo run --release --example streaming         # composed planner and renderer
 cargo run --release --example assisted_start    # continue from real human history
 cargo run --release --example static_quickstart # seam trigger, then one B to C finish
 cargo run --release --example static_streaming  # the same finish, one report per tick
+cargo run --release --example static_simple     # A, target, radius, reports -> continuation
 cargo run --release --example continuous_to_point # type a target, watch it acquire
 cargo run --release --example static_to_point     # the same, with the wrong planner
 ```
@@ -163,14 +199,18 @@ values are median microseconds per public call.
 | Continuous fresh call, motor evaluated | 602.8 | 474.2 | 1.3× |
 | Static renderer profile preparation | 3379 | 2664 | 1.3× |
 | Renderer 1 ms report | 21.9 | 18.0 | 1.2× |
-| Static fresh sampled-head plan | 361.2 | 464.2 | 0.8× |
+| Static fresh sampled-head plan | 361.2 | 319.7 | 1.1× |
 
 The streaming and state-machine boundaries — the calls a 1 kHz output loop actually
 makes every millisecond — are one to two orders of magnitude cheaper. The two dense
 neural forward passes land near parity, because the Python path already dispatches
-those GEMMs to OpenBLAS; the Static encoder is currently about 28% slower than that
-hand-tuned kernel. The Renderer matches the reference C99 runtime, whose own receipt
-reports 18.8 µs per generated report.
+those GEMMs to OpenBLAS. The Renderer matches the reference C99 runtime, whose own
+receipt reports 18.8 µs per generated report.
+
+The static plan is the latency-critical one: once B closes, it has to finish before the
+output loop wants its next report. At 320 µs it fits inside a 1 ms tick with room to
+spare, provided the renderer profile was prepared in advance — that step costs 2.7 ms
+and must not happen at B.
 
 Without `-C target-cpu=native` the renderer costs 21.6 µs and a fresh motor call
 548 µs; every other figure is unchanged.

@@ -172,3 +172,177 @@ fn onset_detector_matches_the_reference() {
         }
     }
 }
+
+fn straight_movement(component: f64, radius: f64) -> abcurves::static_planner::Movement {
+    // A straight run that stops with BC = (component, component), at 90 percent
+    // of the way to the centre so `max_center_progress` is satisfied.
+    let far = 10.0 * component;
+    let travelled = 9.0 * component;
+    let ticks = 100usize;
+    let step = (travelled / ticks as f64) as f32;
+    abcurves::static_planner::Movement::from_counts(
+        [0.0, 0.0],
+        [far, far],
+        radius,
+        &vec![[step, step]; ticks],
+    )
+}
+
+#[test]
+fn short_continuations_follow_the_seam_floor() {
+    use abcurves::static_planner::Movement;
+
+    // |BC| = component * sqrt(2). The contract floor is 8 counts.
+    for radius in [2.0f64, 5.0] {
+        for component in [1.0f64, 5.0] {
+            let movement = straight_movement(component, radius);
+            let error = movement.handoff().unwrap_err().to_string();
+            assert!(
+                error.contains("cannot be planned under any"),
+                "|BC| {:.2} radius {radius} should be refused outright: {error}",
+                component * 2.0f64.sqrt()
+            );
+        }
+        // 8.49 counts clears the floor but not the 90 percent edge margin.
+        let movement = straight_movement(6.0, radius);
+        let config = movement.resolved_policy().unwrap_or_else(|error| {
+            panic!("|BC| 8.49 radius {radius} should be planable: {error}")
+        });
+        assert_eq!(
+            config.threshold, 0.8,
+            "radius {radius} should fall back to the contract"
+        );
+
+        for component in [10.0f64, 20.0] {
+            let movement = straight_movement(component, radius);
+            let config = movement.resolved_policy().unwrap();
+            assert_eq!(
+                config.threshold,
+                0.9,
+                "|BC| {:.2} radius {radius} should keep the recommendation",
+                component * 2.0f64.sqrt()
+            );
+        }
+    }
+
+    // A geometry with no usable window at all.
+    assert!(
+        Movement::eligible_remaining([0.0, 0.0], [0.0, 0.0], 5.0, Default::default()).is_none()
+    );
+}
+
+#[test]
+fn eligible_window_agrees_with_the_gate() {
+    use abcurves::static_planner::{Movement, Policy};
+
+    let target = [200.0, 0.0];
+    let radius = 5.0;
+    let window =
+        Movement::eligible_remaining([0.0, 0.0], target, radius, Policy::Contract).unwrap();
+    for remaining in [10.0f64, 20.0, 40.0, 60.0] {
+        let step = ((target[0] - remaining) / 100.0) as f32;
+        let movement = Movement::from_counts([0.0, 0.0], target, radius, &vec![[step, 0.0]; 100])
+            .with_policy(Policy::Contract);
+        let inside = window.contains(&remaining);
+        assert_eq!(
+            movement.handoff().is_ok(),
+            inside,
+            "|BC| {remaining} against window {:.2}..={:.2}",
+            window.start(),
+            window.end()
+        );
+    }
+}
+
+#[test]
+fn convenience_path_equals_the_explicit_path() {
+    use abcurves::static_planner::{Draw, Handoff, Movement, StaticPipeline};
+
+    let root = models_root();
+    if !root.join("planner_seed7.pt").is_file() {
+        eprintln!("skipping: {} is absent", root.display());
+        return;
+    }
+    let raw_flat = read_i16(FIXTURE, "raw");
+    let lengths = read_i64(FIXTURE, "raw_lengths");
+    let raw: Vec<[i16; 2]> = raw_flat[..lengths[0] as usize * 2]
+        .chunks_exact(2)
+        .map(|pair| [pair[0], pair[1]])
+        .collect();
+    let target_a = read_f64("static_pipeline_arm", "target_a_0");
+    let radius = read_f64("static_pipeline_arm", "radius_0")[0];
+    let ticks = read_i64(FIXTURE, "trigger_t")[0] as usize;
+    let fire_target = read_f64(FIXTURE, "fire_target");
+    let fire_radius = read_f64(FIXTURE, "fire_radius")[0];
+    let centre = read_f64(FIXTURE, "trigger_center")[0];
+
+    let movement = Movement::from_reports(
+        [0.0, 0.0],
+        [target_a[0], target_a[1]],
+        radius,
+        &raw[..ticks],
+    );
+    let derived = movement.handoff().unwrap();
+    let expected = Handoff::new([fire_target[0], fire_target[1]], fire_radius, centre).unwrap();
+    for axis in 0..2 {
+        assert!((derived.target_rel_at_b[axis] - expected.target_rel_at_b[axis]).abs() < 1e-9);
+    }
+    assert_eq!(derived.target_radius, expected.target_radius);
+    assert!((derived.progress_center - expected.progress_center).abs() < 1e-9);
+
+    let profiles = read_i16(FIXTURE, "profiles");
+    let profile_window: Vec<[i16; 2]> = profiles[..512]
+        .chunks_exact(2)
+        .map(|p| [p[0], p[1]])
+        .collect();
+    let report_counts = read_i64(FIXTURE, "report_counts");
+    let reports = read_i16(FIXTURE, "reports");
+
+    let mut pipeline = StaticPipeline::from_pretrained(7, Some(&root), true).unwrap();
+    let profile = pipeline.prepare_renderer_profile(&profile_window).unwrap();
+    let mut cursor = 0usize;
+    for (index, seed) in [7u64, 2026, 12345].into_iter().enumerate() {
+        let out = pipeline
+            .continue_movement(&movement, &profile, Draw::seeded(seed))
+            .unwrap();
+        let expected_len = report_counts[index] as usize;
+        assert_eq!(out.len(), expected_len, "seed {seed} length");
+        for (step, report) in out.iter().enumerate() {
+            assert_eq!(
+                *report,
+                [reports[cursor + step * 2], reports[cursor + step * 2 + 1]],
+                "seed {seed} report {step}"
+            );
+        }
+        cursor += expected_len * 2;
+    }
+}
+
+#[test]
+fn ineligible_handoffs_name_their_rule() {
+    use abcurves::static_planner::Movement;
+
+    let raw_flat = read_i16(FIXTURE, "raw");
+    let lengths = read_i64(FIXTURE, "raw_lengths");
+    let raw: Vec<[i16; 2]> = raw_flat[..lengths[0] as usize * 2]
+        .chunks_exact(2)
+        .map(|pair| [pair[0], pair[1]])
+        .collect();
+    let target_a = read_f64("static_pipeline_arm", "target_a_0");
+    let radius = read_f64("static_pipeline_arm", "radius_0")[0];
+    let target = [target_a[0], target_a[1]];
+
+    let empty = Movement::from_reports([0.0, 0.0], target, radius, &[]);
+    assert!(empty.handoff().is_err(), "an empty prefix has no handoff");
+
+    let early = Movement::from_reports([0.0, 0.0], target, radius, &raw[..40]);
+    let error = early.handoff().unwrap_err().to_string();
+    assert!(error.contains("edge progress"), "cut at 40 ms: {error}");
+
+    let late = Movement::from_reports([0.0, 0.0], target, radius, &raw);
+    let error = late.handoff().unwrap_err().to_string();
+    assert!(
+        error.contains("inside the target"),
+        "cut at the end: {error}"
+    );
+}

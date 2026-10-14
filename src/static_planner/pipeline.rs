@@ -1,3 +1,4 @@
+use super::movement::Movement;
 use super::planner::{FastPlanner, Intent};
 use super::request::{Draw, Handoff};
 use crate::error::{Error, Result, require};
@@ -88,6 +89,21 @@ impl StaticPipeline {
             tick: 0,
             head: intent.head,
         })
+    }
+
+    /// Continue a movement given only A, the target, the radius and the
+    /// reports observed so far.
+    ///
+    /// B is the last sample in the movement. An ineligible handoff is an
+    /// error naming the rule it failed and the measured value.
+    pub fn continue_movement(
+        &mut self,
+        movement: &Movement,
+        profile: &RendererProfile,
+        draw: Draw,
+    ) -> Result<Vec<[i16; 2]>> {
+        let handoff = movement.handoff()?;
+        self.generate(movement.prefix(), profile, handoff, draw)
     }
 
     /// Plan the finish and render it to completion in one call.
