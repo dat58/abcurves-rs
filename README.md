@@ -99,6 +99,29 @@ output here is the slow end of the range rather than a typical one. Pin a head w
 `Draw::seeded(n).head(k)` when the duration has to be bounded, or read
 `PreparedStream::duration_ms` before rendering and redraw if it does not fit the budget.
 
+#### Drawing every head at once
+
+Since the heads differ only in a 96 by 43 product on a shared trunk, all sixteen can be
+planned for the price of roughly one and a half:
+
+```rust
+let plans = pipeline.plan_movement_all(&movement)?;      // 483 us for sixteen
+let intent = plans.into_iter().min_by_key(|plan| plan.duration_ms).unwrap();
+let reports = pipeline.begin(&profile, intent, seed)?.render_remaining(pipeline.model())?;
+```
+
+Entry `k` is bit for bit what `continue_movement` returns for `draw.head(k)`, so nothing
+is lost by choosing after the fact; `tests/static_planner.rs` and `tests/static_pipeline.rs`
+pin that equality for all sixteen. Rendering is the half that does not batch:
+`continue_movement_all` exists, but the sixteen finishes of one handoff total about 2,300
+reports at 18 µs each, so it costs roughly 42 ms and belongs nowhere near a 1 ms tick.
+Choose from the plans — `duration_ms` and the cumulative `smooth_dxdy` are enough — and
+render once. `examples/static_choose.rs` does exactly that.
+
+One caution: the sixteen heads *are* the model's distribution of human finishes, and a
+seed draws from it uniformly. Always taking the shortest replaces that distribution with
+its own tail, which is a signature. Filter when a deadline forces it, and draw otherwise.
+
 #### When you do not know where B is
 
 A live application often has to be *told* when to take over. Drive a `BTrigger` instead,
@@ -154,6 +177,7 @@ cargo run --release --example assisted_start    # continue from real human histo
 cargo run --release --example static_quickstart # seam trigger, then one B to C finish
 cargo run --release --example static_streaming  # the same finish, one report per tick
 cargo run --release --example static_simple     # A, target, radius, reports -> continuation
+cargo run --release --example static_choose     # plan all sixteen heads, render one
 cargo run --release --example continuous_to_point # type a target, watch it acquire
 cargo run --release --example static_to_point     # the same, with the wrong planner
 ```
@@ -218,6 +242,11 @@ values are median microseconds per public call.
 | Static renderer profile preparation | 3379 | 2664 | 1.3× |
 | Renderer 1 ms report | 21.9 | 18.0 | 1.2× |
 | Static fresh sampled-head plan | 361.2 | 319.7 | 1.1× |
+| Static plan, all sixteen heads | 5779 (sixteen calls) | 482.9 | **12×** |
+
+The sixteen-head row has no Python counterpart: the reference has no batch entry point,
+so the only way to get all sixteen there is sixteen full plans, which is what the 5,779 µs
+is. Sharing the trunk is what makes the Rust side 12× cheaper, not the kernels.
 
 The streaming and state-machine boundaries — the calls a 1 kHz output loop actually
 makes every millisecond — are one to two orders of magnitude cheaper. The two dense

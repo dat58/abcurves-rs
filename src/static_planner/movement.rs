@@ -174,10 +174,10 @@ impl Movement {
     fn check(&self, config: &BConfig) -> std::result::Result<Handoff, String> {
         let goal = [self.target[0] - self.a[0], self.target[1] - self.a[1]];
         let distance = goal[0].hypot(goal[1]);
-        if !(distance > 1e-9) {
+        if distance.is_nan() || distance <= 1e-9 {
             return Err("A and the target coincide".into());
         }
-        if !(self.radius.is_finite() && self.radius > 0.0) {
+        if !self.radius.is_finite() || self.radius <= 0.0 {
             return Err("radius must be positive".into());
         }
         let ticks = self.prefix.len();
@@ -276,7 +276,7 @@ impl Movement {
     ) -> Option<RangeInclusive<f64>> {
         let goal = [target[0] - a[0], target[1] - a[1]];
         let distance = goal[0].hypot(goal[1]);
-        if !(distance > 1e-9) || !(radius.is_finite() && radius > 0.0) {
+        if distance.is_nan() || distance <= 1e-9 || !radius.is_finite() || radius <= 0.0 {
             return None;
         }
         let mut best: Option<RangeInclusive<f64>> = None;

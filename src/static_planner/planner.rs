@@ -86,6 +86,12 @@ pub struct Intent {
     pub head: usize,
 }
 
+struct PlanInput {
+    window: [f32; WINDOW * INPUT_CHANNELS],
+    summary: [f32; SUMMARY_LEN],
+    boundary_velocity: [f64; 2],
+}
+
 pub struct FastPlanner {
     weights: TcnWeights,
     workspace: TcnWorkspace,
@@ -364,6 +370,37 @@ impl FastPlanner {
         handoff: Handoff,
         draw: Draw,
     ) -> Result<Intent> {
+        let input = self.plan_input(prefix_raw_dxdy, handoff)?;
+        let chosen = match draw.head {
+            Some(value) => {
+                require(value < HEADS, "Planner head is out of range")?;
+                value
+            }
+            None => head_from_seed(draw.planner_seed, HEADS as u32),
+        };
+        self.run_trunk(&input);
+        self.head_intent(&input, chosen)
+    }
+
+    /// Every head's finish for one handoff, in head order.
+    ///
+    /// The sixteen heads share the whole trunk and differ only in a 96 by 43
+    /// product, so this costs barely more than [`plan`](Self::plan) and lets
+    /// the caller choose by duration or shape instead of by seed. Entry `k` is
+    /// what `plan` returns for `Draw::seeded(n).head(k)`, bit for bit.
+    pub fn plan_all(
+        &mut self,
+        prefix_raw_dxdy: &[[f32; 2]],
+        handoff: Handoff,
+    ) -> Result<Vec<Intent>> {
+        let input = self.plan_input(prefix_raw_dxdy, handoff)?;
+        self.run_trunk(&input);
+        (0..HEADS)
+            .map(|head| self.head_intent(&input, head))
+            .collect()
+    }
+
+    fn plan_input(&self, prefix_raw_dxdy: &[[f32; 2]], handoff: Handoff) -> Result<PlanInput> {
         require(
             !prefix_raw_dxdy.is_empty()
                 && prefix_raw_dxdy
@@ -396,31 +433,37 @@ impl FastPlanner {
             window[row + 1] = (source[1] - self.prefix_mean[1]) / self.prefix_std[1];
             window[row + 2] = 1.0;
         }
-        let boundary_velocity = [
-            f64::from(represented[represented.len() - 1][0]),
-            f64::from(represented[represented.len() - 1][1]),
-        ];
+        Ok(PlanInput {
+            window,
+            summary,
+            boundary_velocity: [
+                f64::from(represented[represented.len() - 1][0]),
+                f64::from(represented[represented.len() - 1][1]),
+            ],
+        })
+    }
 
-        let chosen = match draw.head {
-            Some(value) => {
-                require(value < HEADS, "Planner head is out of range")?;
-                value
-            }
-            None => head_from_seed(draw.planner_seed, HEADS as u32),
-        };
+    fn run_trunk(&mut self, input: &PlanInput) {
+        if self.backend == NeuralInference::Native {
+            tcn::trunk(
+                &self.weights,
+                &mut self.workspace,
+                &input.window,
+                &input.summary,
+            );
+        }
+    }
 
+    fn head_intent(&mut self, input: &PlanInput, chosen: usize) -> Result<Intent> {
         let mut prediction = [0.0f32; OUT_DIM];
         #[cfg(feature = "candle")]
         if let Some(engine) = self.candle.as_ref() {
-            engine.forward(&window, &summary, chosen, &mut prediction)?;
+            engine.forward(&input.window, &input.summary, chosen, &mut prediction)?;
         }
         if self.backend == NeuralInference::Native {
             let base = chosen * CHANNELS * OUT_DIM;
-            tcn::forward(
-                &self.weights,
-                &mut self.workspace,
-                &window,
-                &summary,
+            tcn::head(
+                &self.workspace,
                 &self.weights.head_weight_by_head[base..base + CHANNELS * OUT_DIM],
                 &self.weights.head_bias[chosen * OUT_DIM..(chosen + 1) * OUT_DIM],
                 &mut prediction,
@@ -439,7 +482,7 @@ impl FastPlanner {
         self.decoder.decode(
             duration,
             &raw_output[..OUT_DIM - 1],
-            boundary_velocity,
+            input.boundary_velocity,
             &mut self.scratch[..duration],
         );
 

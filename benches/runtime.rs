@@ -197,6 +197,7 @@ fn static_planner(root: &Path) {
     }
 
     let mut plan = Samples::new("Static seed 7: fresh sampled-head plan");
+    let mut plan_all = Samples::new("Static seed 7: all sixteen heads planned");
     let mut prepare = Samples::new("Static renderer profile preparation");
     let mut step = Samples::new("Static renderer 1 ms report");
     let mut complete = Samples::new("Static complete handoff through last report");
@@ -224,6 +225,12 @@ fn static_planner(root: &Path) {
         cursor += length * 2;
         let target = [targets[index * 2], targets[index * 2 + 1]];
         let handoff = Handoff::new(target, radii[index], progresses[index]).unwrap();
+        for _ in 0..5 {
+            let start = Instant::now();
+            let batch = pipeline.planner_mut().plan_all(&prefix, handoff).unwrap();
+            plan_all.push(start.elapsed().as_nanos());
+            std::hint::black_box(&batch);
+        }
         for round in 0..5u64 {
             for head in 0..16 {
                 let start = Instant::now();
@@ -246,6 +253,7 @@ fn static_planner(root: &Path) {
         }
     }
     plan.report();
+    plan_all.report();
     prepare.report();
     complete.report();
     step.report();

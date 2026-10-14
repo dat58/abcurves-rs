@@ -106,6 +106,40 @@ impl StaticPipeline {
         self.generate(movement.prefix(), profile, handoff, draw)
     }
 
+    /// Every head's finish for the same handoff, in head order, unrendered.
+    ///
+    /// The sixteen heads share the trunk, so this costs barely more than one
+    /// plan. Read [`Intent::duration_ms`] to choose, then hand the winner to
+    /// [`begin`](Self::begin) with the renderer seed; the result is identical
+    /// to having drawn that head in the first place.
+    pub fn plan_movement_all(&mut self, movement: &Movement) -> Result<Vec<Intent>> {
+        let handoff = movement.handoff()?;
+        self.planner.plan_all(movement.prefix(), handoff)
+    }
+
+    /// Every head's finish, rendered.
+    ///
+    /// Rendering is the expensive half and it is paid sixteen times here, so
+    /// prefer [`plan_movement_all`](Self::plan_movement_all) when the choice
+    /// can be made from the plan. Each entry renders from its own copy of the
+    /// profile, so the streams do not interfere and entry `k` equals what
+    /// [`continue_movement`](Self::continue_movement) returns for
+    /// `draw.head(k)`.
+    pub fn continue_movement_all(
+        &mut self,
+        movement: &Movement,
+        profile: &RendererProfile,
+        draw: Draw,
+    ) -> Result<Vec<Vec<[i16; 2]>>> {
+        self.plan_movement_all(movement)?
+            .into_iter()
+            .map(|intent| {
+                self.begin(profile, intent, draw.renderer_seed)?
+                    .render_remaining(&self.model)
+            })
+            .collect()
+    }
+
     /// Plan the finish and render it to completion in one call.
     pub fn generate(
         &mut self,

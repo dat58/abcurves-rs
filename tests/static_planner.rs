@@ -154,3 +154,26 @@ fn summary_and_plans_match_the_reference() {
         "smooth deltas drifted {worst_smooth:e}"
     );
 }
+
+#[test]
+fn every_head_at_once_matches_one_head_at_a_time() {
+    let root = models_root();
+    if !root.join("planner_seed7.pt").is_file() {
+        eprintln!("skipping: {} is absent", root.display());
+        return;
+    }
+    let mut planner = FastPlanner::from_pretrained(7, Some(&root), true).unwrap();
+    for event in events() {
+        let handoff = Handoff::new(event.target, event.radius, event.progress).unwrap();
+        let batch = planner.plan_all(&event.prefix, handoff).unwrap();
+        assert_eq!(batch.len(), 16);
+        for head in 0..16 {
+            let single = planner
+                .plan(&event.prefix, handoff, Draw::seeded(2026).head(head))
+                .unwrap();
+            assert_eq!(batch[head].head, head);
+            assert_eq!(batch[head].duration_ms, single.duration_ms, "head {head}");
+            assert_eq!(batch[head].smooth_dxdy, single.smooth_dxdy, "head {head}");
+        }
+    }
+}

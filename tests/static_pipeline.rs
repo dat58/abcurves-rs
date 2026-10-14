@@ -346,3 +346,47 @@ fn ineligible_handoffs_name_their_rule() {
         "cut at the end: {error}"
     );
 }
+
+#[test]
+fn rendering_every_head_matches_rendering_one() {
+    use abcurves::static_planner::Movement;
+
+    let root = models_root();
+    if !root.join("planner_seed7.pt").is_file() {
+        eprintln!("skipping: {} is absent", root.display());
+        return;
+    }
+    let raw_flat = read_i16(FIXTURE, "raw");
+    let lengths = read_i64(FIXTURE, "raw_lengths");
+    let raw: Vec<[i16; 2]> = raw_flat[..lengths[0] as usize * 2]
+        .chunks_exact(2)
+        .map(|pair| [pair[0], pair[1]])
+        .collect();
+    let target_a = read_f64("static_pipeline_arm", "target_a_0");
+    let radius = read_f64("static_pipeline_arm", "radius_0")[0];
+    let ticks = read_i64(FIXTURE, "trigger_t")[0] as usize;
+    let movement = Movement::from_reports(
+        [0.0, 0.0],
+        [target_a[0], target_a[1]],
+        radius,
+        &raw[..ticks],
+    );
+    let profiles = read_i16(FIXTURE, "profiles");
+    let profile_window: Vec<[i16; 2]> = profiles[..512]
+        .chunks_exact(2)
+        .map(|p| [p[0], p[1]])
+        .collect();
+
+    let mut pipeline = StaticPipeline::from_pretrained(7, Some(&root), true).unwrap();
+    let profile = pipeline.prepare_renderer_profile(&profile_window).unwrap();
+    let batch = pipeline
+        .continue_movement_all(&movement, &profile, Draw::seeded(2026))
+        .unwrap();
+    assert_eq!(batch.len(), 16);
+    for head in 0..16 {
+        let single = pipeline
+            .continue_movement(&movement, &profile, Draw::seeded(2026).head(head))
+            .unwrap();
+        assert_eq!(batch[head], single, "head {head}");
+    }
+}

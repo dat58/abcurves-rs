@@ -60,9 +60,6 @@ fn relu(value: f32) -> f32 {
     if value > 0.0 { value } else { 0.0 }
 }
 
-/// Receptive-cone trim: only the last row is consumed downstream, so each
-/// convolution only needs output rows inside the cone. Rows below the cone are
-/// never read, so this is selection, not approximation.
 pub fn forward(
     weights: &TcnWeights,
     space: &mut TcnWorkspace,
@@ -72,6 +69,17 @@ pub fn forward(
     head_bias: &[f32],
     out: &mut [f32],
 ) {
+    trunk(weights, space, window, summary);
+    head(space, head_weight, head_bias, out);
+}
+
+/// Everything the sixteen heads share, which is all but the last 96 by 43
+/// product. Drawing every head costs one trunk and sixteen of those.
+///
+/// Receptive-cone trim: only the last row is consumed downstream, so each
+/// convolution only needs output rows inside the cone. Rows below the cone are
+/// never read, so this is selection, not approximation.
+pub fn trunk(weights: &TcnWeights, space: &mut TcnWorkspace, window: &[f32], summary: &[f32]) {
     matmul(
         window,
         WINDOW,
@@ -169,6 +177,9 @@ pub fn forward(
     for column in 0..CHANNELS {
         space.trunk[column] = relu(space.trunk[column] + weights.trunk_bias[column]);
     }
+}
+
+pub fn head(space: &TcnWorkspace, head_weight: &[f32], head_bias: &[f32], out: &mut [f32]) {
     for slot in 0..out.len() {
         let mut total = 0.0f32;
         for column in 0..CHANNELS {
