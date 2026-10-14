@@ -18,7 +18,9 @@ pub use continuous::{
 pub use error::{Error, Result};
 pub use nn::NeuralInference;
 pub use renderer::{RendererModel, RendererProfile, RendererStream};
-pub use static_planner::{BEvent, BTrigger, FastPlanner, Intent, OnsetDetector, StaticPipeline};
+pub use static_planner::{
+    BEvent, BTrigger, Draw, FastPlanner, Handoff, Intent, OnsetDetector, StaticPipeline,
+};
 
 pub fn load(options: ContinuousOptions) -> Result<MovementRuntime> {
     continuous::load(options)

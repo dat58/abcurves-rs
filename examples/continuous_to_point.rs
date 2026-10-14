@@ -17,7 +17,7 @@ use std::io::{self, BufRead, Write};
 const DEFAULT_RADIUS: f64 = 18.0;
 const DEFAULT_SEED: u64 = 2026;
 const SETTLE_MS: i64 = 250;
-const TIMEOUT_MS: i64 = 10_000;
+const TIMEOUT_MS: i64 = 100;
 
 fn main() -> abcurves::Result<()> {
     if !support::models_present() {
@@ -69,6 +69,7 @@ fn main() -> abcurves::Result<()> {
     let mut settled_for = 0i64;
     let mut silent = 0usize;
     let mut last = [0.0f64; 2];
+    let mut out = vec![];
     for tick in 1..=TIMEOUT_MS {
         let block = stream.advance(tick * 1000)?;
         let report = block.reports[0];
@@ -77,10 +78,11 @@ fn main() -> abcurves::Result<()> {
         if report == [0, 0] {
             silent += 1;
         }
-        println!(
-            "{tick:>6}  {:>4} {:>4}  {:>9.2} {:>9.2}  {gap:>7.2}",
-            report[0], report[1], last[0], last[1]
-        );
+        out.push(report);
+        //         println!(
+        //             "{tick:>6}  {:>4} {:>4}  {:>9.2} {:>9.2}  {gap:>7.2}",
+        //             report[0], report[1], last[0], last[1]
+        //         );
         settled_for = if gap <= radius { settled_for + 1 } else { 0 };
         if settled_for >= SETTLE_MS {
             println!(
@@ -89,6 +91,7 @@ fn main() -> abcurves::Result<()> {
             return Ok(());
         }
     }
+    println!("out: {out:?}");
     let gap = (last[0] - x).hypot(last[1] - y);
     println!("\nstill {gap:.2} counts away after {TIMEOUT_MS} ms ({silent} silent reports)");
     Ok(())

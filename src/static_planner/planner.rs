@@ -1,4 +1,5 @@
 use super::prodmp::{ComponentCache, ProDMPConfig};
+use super::request::{Draw, Handoff};
 use super::summary::{SUMMARY_LEN, SummaryNormalizer, distance_over_radius, raw_summary62};
 use super::tcn::{self, CHANNELS, INPUT_CHANNELS, KERNEL, TcnWeights, TcnWorkspace, WINDOW};
 use crate::error::{Error, Result, require};
@@ -332,14 +333,17 @@ impl FastPlanner {
         )
     }
 
+    /// Generate one complete B to C finish from the observed A to B prefix.
+    ///
+    /// `prefix_raw_dxdy` is the observed movement in canonical native counts,
+    /// one pair per closed 1 ms bin, ending at B. Only the last 160 bins are
+    /// read. [`Handoff`] carries the geometry at B and [`Draw`] selects the
+    /// sample.
     pub fn plan(
         &mut self,
         prefix_raw_dxdy: &[[f32; 2]],
-        target_rel_at_b: [f64; 2],
-        target_radius: f64,
-        progress_center: f64,
-        seed: u128,
-        head: Option<usize>,
+        handoff: Handoff,
+        draw: Draw,
     ) -> Result<Intent> {
         require(
             !prefix_raw_dxdy.is_empty()
@@ -349,18 +353,12 @@ impl FastPlanner {
                     .all(|value| value.is_finite()),
             "Planner prefix must be a non-empty finite array with shape (P, 2)",
         )?;
-        require(
-            target_rel_at_b.iter().all(|value| value.is_finite()),
-            "target_rel_at_B must contain two finite count-space values",
-        )?;
-        require(
-            target_radius.is_finite() && target_radius > 0.0,
-            "target_radius must be positive",
-        )?;
-        require(
-            progress_center.is_finite() && (0.0..=1.0).contains(&progress_center),
-            "progress_center must lie in [0, 1]",
-        )?;
+        handoff.validate()?;
+        let Handoff {
+            target_rel_at_b,
+            target_radius,
+            progress_center,
+        } = handoff;
 
         let start = prefix_raw_dxdy.len().saturating_sub(PREFIX_LEN);
         let represented = &prefix_raw_dxdy[start..];
@@ -384,12 +382,12 @@ impl FastPlanner {
             f64::from(represented[represented.len() - 1][1]),
         ];
 
-        let chosen = match head {
+        let chosen = match draw.head {
             Some(value) => {
                 require(value < HEADS, "Planner head is out of range")?;
                 value
             }
-            None => head_from_seed(seed, HEADS as u32),
+            None => head_from_seed(draw.planner_seed, HEADS as u32),
         };
 
         let mut prediction = vec![0.0f32; OUT_DIM];

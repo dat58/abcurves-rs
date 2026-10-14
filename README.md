@@ -31,8 +31,41 @@ println!("{:?}", second.xy.last());
 
 Times are microseconds from initialization and `xy` holds absolute positions at closed
 1 ms endpoints, in the Continuous model's common angular count space. `ContinuousPipeline`
-composes the planner with the Renderer and returns integer hardware reports;
-`StaticPipeline` performs one finite B→C continuation.
+composes the planner with the Renderer and returns integer hardware reports.
+
+### The static handoff
+
+`StaticPipeline` continues a movement a person has already begun. Watch the real A→B
+motion with a `BTrigger`; when it fires it hands you every number the planner needs:
+
+```rust
+use abcurves::static_planner::{BEvent, BTrigger, Draw, Handoff, StaticPipeline};
+
+let mut trigger = BTrigger::recommended();
+trigger.arm(target_rel_at_a, radius)?;
+
+for delta in &observed {
+    let target_now = [/* target_rel_at_a minus what has been travelled */];
+    if let Some(BEvent::Fire(fire)) = trigger.push_tick(dx, dy, target_now, radius)? {
+        let reports = pipeline.generate(
+            &prefix,                  // observed A to B bins, native counts
+            &profile,                 // prepared once from 256 genuine reports
+            Handoff::from(&fire),     // the geometry at B
+            Draw::seeded(2026),       // which head, which texture draw
+        )?;
+    }
+}
+```
+
+`Handoff` groups the three numbers that describe B, and comes straight from `BFire`, so
+in the normal path you never assemble it by hand. Build one yourself with
+`Handoff::new` or `Handoff::from_observed` only when you establish B some other way.
+`Draw` groups the two seeds: `Draw::seeded(n)` uses one for both, `Draw::split(a, b)`
+separates them, and `.head(k)` pins a head instead of sampling.
+
+Model choice is separate again: it is the `model_seed` argument to
+`StaticPipeline::from_pretrained`, which picks between the two independently trained
+cells (7 and 23).
 
 ## Models
 

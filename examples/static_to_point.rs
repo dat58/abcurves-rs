@@ -29,7 +29,7 @@
 #[path = "support/mod.rs"]
 mod support;
 
-use abcurves::static_planner::StaticPipeline;
+use abcurves::static_planner::{Draw, Handoff, StaticPipeline};
 use std::io::{self, BufRead, Write};
 
 const PREFIX_TICKS: usize = 160;
@@ -83,16 +83,8 @@ fn main() -> abcurves::Result<()> {
     let profile = pipeline
         .prepare_renderer_profile(&support::pairs_i16("static_event", "profile_before_a"))?;
 
-    let mut stream = pipeline.prepare(
-        &prefix,
-        &profile,
-        [x, y],
-        radius,
-        progress_center,
-        u128::from(seed),
-        seed,
-        None,
-    )?;
+    let handoff = Handoff::new([x, y], radius, progress_center)?;
+    let mut stream = pipeline.prepare(&prefix, &profile, handoff, Draw::seeded(seed))?;
 
     println!(
         "target ({x}, {y}) counts, radius {radius}, seed {seed} -> head {}, {} ms",
@@ -108,6 +100,7 @@ fn main() -> abcurves::Result<()> {
     let mut position = [0i32; 2];
     let mut silent = 0usize;
     let mut tick = 0usize;
+    let mut out = Vec::new();
     while !stream.complete() {
         let report = stream.step(model)?;
         tick += 1;
@@ -116,11 +109,14 @@ fn main() -> abcurves::Result<()> {
         if report == [0, 0] {
             silent += 1;
         }
-        println!(
-            "{tick:>5}  {:>4} {:>4}  {:>8} {:>8}",
-            report[0], report[1], position[0], position[1]
-        );
+        out.push(report);
+        //         println!(
+        //             "{tick:>5}  {:>4} {:>4}  {:>8} {:>8}",
+        //             report[0], report[1], position[0], position[1]
+        //         );
     }
+
+    println!("reports: {out:?}");
 
     let gap = (f64::from(position[0]) - x).hypot(f64::from(position[1]) - y);
     println!(

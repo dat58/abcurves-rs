@@ -1,4 +1,4 @@
-#![allow(clippy::needless_range_loop)]
+#![allow(clippy::needless_range_loop, clippy::type_complexity)]
 
 mod common;
 

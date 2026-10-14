@@ -1,4 +1,5 @@
 use super::planner::{FastPlanner, Intent};
+use super::request::{Draw, Handoff};
 use crate::error::{Error, Result, require};
 use crate::model_store;
 use crate::renderer::{RendererModel, RendererProfile, RendererStream};
@@ -55,27 +56,19 @@ impl StaticPipeline {
         &self.model
     }
 
-    #[allow(clippy::too_many_arguments)]
+    /// Plan the finish and open a Renderer event for it.
+    ///
+    /// Step the returned stream once per millisecond, or drain it with
+    /// [`PreparedStream::render_remaining`].
     pub fn prepare(
         &mut self,
         prefix_raw_dxdy: &[[f32; 2]],
         profile: &RendererProfile,
-        target_rel_at_b: [f64; 2],
-        target_radius: f64,
-        progress_center: f64,
-        planner_seed: u128,
-        renderer_event_seed: u64,
-        planner_head: Option<usize>,
+        handoff: Handoff,
+        draw: Draw,
     ) -> Result<PreparedStream> {
-        let intent = self.planner.plan(
-            prefix_raw_dxdy,
-            target_rel_at_b,
-            target_radius,
-            progress_center,
-            planner_seed,
-            planner_head,
-        )?;
-        self.begin(profile, intent, renderer_event_seed)
+        let intent = self.planner.plan(prefix_raw_dxdy, handoff, draw)?;
+        self.begin(profile, intent, draw.renderer_seed)
     }
 
     pub fn begin(
@@ -97,27 +90,15 @@ impl StaticPipeline {
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
+    /// Plan the finish and render it to completion in one call.
     pub fn generate(
         &mut self,
         prefix_raw_dxdy: &[[f32; 2]],
         profile: &RendererProfile,
-        target_rel_at_b: [f64; 2],
-        target_radius: f64,
-        progress_center: f64,
-        seed: u64,
-        planner_head: Option<usize>,
+        handoff: Handoff,
+        draw: Draw,
     ) -> Result<Vec<[i16; 2]>> {
-        let mut stream = self.prepare(
-            prefix_raw_dxdy,
-            profile,
-            target_rel_at_b,
-            target_radius,
-            progress_center,
-            u128::from(seed),
-            seed,
-            planner_head,
-        )?;
+        let mut stream = self.prepare(prefix_raw_dxdy, profile, handoff, draw)?;
         stream.render_remaining(&self.model)
     }
 }

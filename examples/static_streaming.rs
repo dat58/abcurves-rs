@@ -3,7 +3,7 @@
 #[path = "support/mod.rs"]
 mod support;
 
-use abcurves::static_planner::{BEvent, BTrigger, StaticPipeline};
+use abcurves::static_planner::{BEvent, BTrigger, Draw, Handoff, StaticPipeline};
 
 fn main() -> abcurves::Result<()> {
     if !support::models_present() {
@@ -47,12 +47,8 @@ fn main() -> abcurves::Result<()> {
     let mut stream = pipeline.prepare(
         &prefix,
         &profile,
-        fire.target_rel_at_b,
-        fire.target_radius,
-        fire.progress_center,
-        2026,
-        2026,
-        None,
+        Handoff::from(&fire),
+        Draw::split(2026, 101),
     )?;
     println!("head {} plans {} ms", stream.head, stream.duration_ms());
 

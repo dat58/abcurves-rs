@@ -66,7 +66,7 @@ fn candle_backend_reproduces_the_native_policy() {
 
 #[test]
 fn candle_static_encoder_tracks_the_compiled_kernel() {
-    use abcurves::static_planner::FastPlanner;
+    use abcurves::static_planner::{Draw, FastPlanner, Handoff};
     use common::read_f32;
 
     let root = models_root();
@@ -96,27 +96,11 @@ fn candle_static_encoder_tracks_the_compiled_kernel() {
             .collect();
         cursor += length * 2;
         let target = [targets[index * 2], targets[index * 2 + 1]];
+        let handoff = Handoff::new(target, radii[index], progresses[index]).unwrap();
         for head in 0..16 {
-            let reference = native
-                .plan(
-                    &prefix,
-                    target,
-                    radii[index],
-                    progresses[index],
-                    0,
-                    Some(head),
-                )
-                .unwrap();
-            let actual = candle
-                .plan(
-                    &prefix,
-                    target,
-                    radii[index],
-                    progresses[index],
-                    0,
-                    Some(head),
-                )
-                .unwrap();
+            let draw = Draw::seeded(0).head(head);
+            let reference = native.plan(&prefix, handoff, draw).unwrap();
+            let actual = candle.plan(&prefix, handoff, draw).unwrap();
             assert_eq!(actual.head, reference.head);
             assert_eq!(
                 actual.duration_ms, reference.duration_ms,

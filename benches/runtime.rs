@@ -2,7 +2,7 @@ use abcurves::continuous::{
     ContinuousOptions, ContinuousPipeline, CountTransform, PipelineOptions,
 };
 use abcurves::renderer::{RendererModel, RendererProfile};
-use abcurves::static_planner::StaticPipeline;
+use abcurves::static_planner::{Draw, Handoff, StaticPipeline};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -223,19 +223,13 @@ fn static_planner(root: &Path) {
             .collect();
         cursor += length * 2;
         let target = [targets[index * 2], targets[index * 2 + 1]];
+        let handoff = Handoff::new(target, radii[index], progresses[index]).unwrap();
         for round in 0..5u64 {
             for head in 0..16 {
                 let start = Instant::now();
                 let intent = pipeline
                     .planner_mut()
-                    .plan(
-                        &prefix,
-                        target,
-                        radii[index],
-                        progresses[index],
-                        0,
-                        Some(head),
-                    )
+                    .plan(&prefix, handoff, Draw::seeded(0).head(head))
                     .unwrap();
                 plan.push(start.elapsed().as_nanos());
 

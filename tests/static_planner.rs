@@ -2,7 +2,7 @@
 
 mod common;
 
-use abcurves::static_planner::FastPlanner;
+use abcurves::static_planner::{Draw, FastPlanner, Handoff};
 use common::{models_root, read_f32, read_f64, read_i64};
 
 const FIXTURE: &str = "static_planner";
@@ -111,16 +111,10 @@ fn summary_and_plans_match_the_reference() {
                 *plan_index += 1;
             };
 
+            let handoff = Handoff::new(event.target, event.radius, event.progress).unwrap();
             for head in 0..16 {
                 let intent = planner
-                    .plan(
-                        &event.prefix,
-                        event.target,
-                        event.radius,
-                        event.progress,
-                        2026,
-                        Some(head),
-                    )
+                    .plan(&event.prefix, handoff, Draw::seeded(2026).head(head))
                     .unwrap();
                 check(
                     intent,
@@ -129,16 +123,9 @@ fn summary_and_plans_match_the_reference() {
                     &mut worst_smooth,
                 );
             }
-            for seed in [0u128, 7, 23, 2026, 12345] {
+            for seed in [0u64, 7, 23, 2026, 12345] {
                 let intent = planner
-                    .plan(
-                        &event.prefix,
-                        event.target,
-                        event.radius,
-                        event.progress,
-                        seed,
-                        None,
-                    )
+                    .plan(&event.prefix, handoff, Draw::seeded(seed))
                     .unwrap();
                 check(
                     intent,

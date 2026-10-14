@@ -3,7 +3,7 @@
 #[path = "support/mod.rs"]
 mod support;
 
-use abcurves::static_planner::{BEvent, BTrigger, StaticPipeline};
+use abcurves::static_planner::{BEvent, BTrigger, Draw, Handoff, StaticPipeline};
 
 fn main() -> abcurves::Result<()> {
     if !support::models_present() {
@@ -56,15 +56,8 @@ fn main() -> abcurves::Result<()> {
     // Do this before the latency-sensitive B handoff. Reuse the returned
     // immutable profile for later events from the same device/setup.
     let profile = pipeline.prepare_renderer_profile(&profile_window)?;
-    let reports = pipeline.generate(
-        &prefix,
-        &profile,
-        fire.target_rel_at_b,
-        fire.target_radius,
-        fire.progress_center,
-        2026,
-        None,
-    )?;
+    // Everything the planner needs about B travels inside the BFire.
+    let reports = pipeline.generate(&prefix, &profile, Handoff::from(&fire), Draw::seeded(2026))?;
 
     let travelled: [i32; 2] = reports.iter().fold([0, 0], |total, report| {
         [

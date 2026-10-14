@@ -2,7 +2,7 @@
 
 mod common;
 
-use abcurves::static_planner::{BEvent, BTrigger, StaticPipeline};
+use abcurves::static_planner::{BEvent, BTrigger, Draw, Handoff, StaticPipeline};
 use common::{models_root, read_f64, read_i16, read_i64};
 
 const FIXTURE: &str = "static_pipeline";
@@ -100,15 +100,7 @@ fn seam_trigger_and_continuations_match_the_reference() {
                     let profile = pipeline.prepare_renderer_profile(&profile_window).unwrap();
                     for seed in [7u64, 2026, 12345] {
                         let out = pipeline
-                            .generate(
-                                &prefix,
-                                &profile,
-                                fire.target_rel_at_b,
-                                fire.target_radius,
-                                fire.progress_center,
-                                seed,
-                                None,
-                            )
+                            .generate(&prefix, &profile, Handoff::from(&fire), Draw::seeded(seed))
                             .unwrap();
                         let expected = report_counts[continuation] as usize;
                         assert_eq!(out.len(), expected, "continuation {continuation} length");
