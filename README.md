@@ -76,10 +76,28 @@ it:
 ```
       BC     |BC|  policy  outcome
    (4,4)     5.66       -  refused: |BC| is 5.66 counts, under the 8.0 the contract requires
-   (6,6)     8.49     80%  384 reports, travelling [6, 9]
- (12,12)    16.97     90%  394 reports, travelling [14, 14]
- (20,20)    28.28     90%  406 reports, travelling [21, 22]
+   (6,6)     8.49     80%  384 reports, 35 carry motion, last at 339 ms, travelling [6, 9]
+ (12,12)    16.97     90%  394 reports, 56 carry motion, last at 367 ms, travelling [14, 14]
+ (20,20)    28.28     90%  406 reports, 77 carry motion, last at 361 ms, travelling [21, 22]
 ```
+
+#### Duration is the finishing style, not the distance
+
+A plan that is 384 ms long for 8.49 counts looks wrong and is not. The travel is over in
+about 17 ms; the rest is the micro-adjustment tail humans leave behind, which averages
+0.05 counts per millisecond and reaches the integer reports as a handful of ones among
+zeros — 35 of those 384 reports carry any motion at all, and the last of them lands at
+339 ms. Lengthening `|BC|` from 8.49 to 28.28 counts moves the duration only from 384 to
+406 ms, because what sets it is the head.
+
+The sixteen heads are sixteen learned finishing styles, and at one fixed geometry they
+span an order of magnitude: at BC `(6,6)` they plan 38 ms (head 1) through 384 ms
+(head 13), median 92 ms. A seed picks among them, so `Draw::seeded(n)` is a draw from
+that distribution, not a speed control. The seed used throughout these examples, 2026,
+draws head 13 — the longest dweller — on every event in the fixtures, so every example
+output here is the slow end of the range rather than a typical one. Pin a head with
+`Draw::seeded(n).head(k)` when the duration has to be bounded, or read
+`PreparedStream::duration_ms` before rendering and redraw if it does not fit the budget.
 
 #### When you do not know where B is
 
