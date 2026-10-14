@@ -1,4 +1,4 @@
-use crate::nn::linear::{matmul, matvec};
+use crate::nn::linear::{matmul, matmul_accumulate, matvec};
 
 pub const CHANNELS: usize = 96;
 pub const KERNEL: usize = 5;
@@ -7,6 +7,9 @@ pub const CONVOLUTIONS: usize = 2 * BLOCKS;
 pub const WINDOW: usize = 1 + CONVOLUTIONS * (KERNEL - 1);
 pub const INPUT_CHANNELS: usize = 3;
 pub const LAYER_NORM_EPS: f64 = 1e-5;
+
+const CONV_ROW_TILE: usize = 4;
+const CONV_COLUMN_TILE: usize = 48;
 
 pub struct TcnWeights {
     pub input_weight: Vec<f32>,
@@ -20,6 +23,9 @@ pub struct TcnWeights {
     pub trunk_weight: Vec<f32>,
     pub trunk_bias: Vec<f32>,
     pub head_weight: Vec<f32>,
+    /// `out.weight` regrouped as `[head][channel][slot]`, so a plan indexes
+    /// instead of transposing 4,128 strided elements on every call.
+    pub head_weight_by_head: Vec<f32>,
     pub head_bias: Vec<f32>,
     pub heads: usize,
     pub out_dim: usize,
@@ -29,7 +35,6 @@ pub struct TcnWeights {
 pub struct TcnWorkspace {
     x: Vec<f32>,
     y: Vec<f32>,
-    col: Vec<f32>,
     staged: Vec<f32>,
     summary: Vec<f32>,
     combined: Vec<f32>,
@@ -42,7 +47,6 @@ impl TcnWorkspace {
         Self {
             x: vec![0.0; WINDOW * CHANNELS],
             y: vec![0.0; WINDOW * CHANNELS],
-            col: vec![0.0; WINDOW * KERNEL * CHANNELS],
             staged: vec![0.0; WINDOW * CHANNELS],
             summary: vec![0.0; CHANNELS],
             combined: vec![0.0; 2 * CHANNELS],
@@ -83,33 +87,31 @@ pub fn forward(
     }
 
     space.y.fill(0.0);
-    space.col.fill(0.0);
     for block in 0..BLOCKS {
         for inner in 0..2 {
             let index = block * 2 + inner;
             let low = (KERNEL - 1) * (index + 1);
-            for row in low..WINDOW {
-                for tap in 0..KERNEL {
-                    let source = row + tap - (KERNEL - 1);
-                    for column in 0..CHANNELS {
-                        let value = if inner == 0 {
-                            space.x[source * CHANNELS + column]
-                        } else {
-                            space.y[source * CHANNELS + column]
-                        };
-                        space.col[row * KERNEL * CHANNELS + tap * CHANNELS + column] = value;
-                    }
-                }
-            }
             let rows = WINDOW - low;
-            matmul(
-                &space.col[low * KERNEL * CHANNELS..],
-                rows,
-                KERNEL * CHANNELS,
-                &weights.conv_weight[index * KERNEL * CHANNELS * CHANNELS..],
-                CHANNELS,
-                &mut space.staged[..rows * CHANNELS],
-            );
+            // Inside the cone every tap reads a real row, so the causal zero
+            // padding is unreachable and the convolution is five accumulating
+            // matmuls over the taps, in the same order the packed layout used.
+            space.staged[..rows * CHANNELS].fill(0.0);
+            for tap in 0..KERNEL {
+                let start = (low + tap - (KERNEL - 1)) * CHANNELS;
+                let source = if inner == 0 {
+                    &space.x[start..start + rows * CHANNELS]
+                } else {
+                    &space.y[start..start + rows * CHANNELS]
+                };
+                matmul_accumulate::<CONV_ROW_TILE, CONV_COLUMN_TILE>(
+                    source,
+                    rows,
+                    CHANNELS,
+                    &weights.conv_weight[(index * KERNEL + tap) * CHANNELS * CHANNELS..],
+                    CHANNELS,
+                    &mut space.staged[..rows * CHANNELS],
+                );
+            }
             for row in low..WINDOW {
                 for column in 0..CHANNELS {
                     space.y[row * CHANNELS + column] = space.staged

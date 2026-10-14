@@ -95,6 +95,7 @@ pub struct FastPlanner {
     y_mean: Vec<f32>,
     y_std: Vec<f32>,
     decoder: ComponentCache,
+    scratch: Vec<[f64; 2]>,
     backend: NeuralInference,
     #[cfg(feature = "candle")]
     candle: Option<super::candle::CandleTcn>,
@@ -260,6 +261,10 @@ impl FastPlanner {
         }
 
         let summary_dim = root.entry("summary_dim")?.as_usize()?;
+        require(
+            summary_dim == SUMMARY_LEN,
+            "release Planner summary width differs",
+        )?;
         let weights = TcnWeights {
             input_weight: transpose(&input_weight, CHANNELS, INPUT_CHANNELS),
             input_bias: from_state("encoder.input.bias")?,
@@ -271,6 +276,19 @@ impl FastPlanner {
             summary_bias: from_state("encoder.summary.0.bias")?,
             trunk_weight: from_state("trunk.0.weight")?,
             trunk_bias: from_state("trunk.0.bias")?,
+            head_weight_by_head: {
+                let raw = from_state("out.weight")?;
+                let mut packed = vec![0.0f32; HEADS * CHANNELS * OUT_DIM];
+                for head in 0..HEADS {
+                    for channel in 0..CHANNELS {
+                        for slot in 0..OUT_DIM {
+                            packed[(head * CHANNELS + channel) * OUT_DIM + slot] =
+                                raw[(head * OUT_DIM + slot) * CHANNELS + channel];
+                        }
+                    }
+                }
+                packed
+            },
             head_weight: from_state("out.weight")?,
             head_bias: from_state("out.bias")?,
             heads: HEADS,
@@ -301,6 +319,7 @@ impl FastPlanner {
             y_mean: tensor(root.entry("y_mean")?)?,
             y_std: tensor(root.entry("y_std")?)?,
             decoder,
+            scratch: vec![[0.0; 2]; HORIZON],
             backend,
             #[cfg(feature = "candle")]
             candle,
@@ -363,12 +382,12 @@ impl FastPlanner {
         let start = prefix_raw_dxdy.len().saturating_sub(PREFIX_LEN);
         let represented = &prefix_raw_dxdy[start..];
         let raw = self.raw_summary(represented, target_rel_at_b, target_radius, progress_center);
-        let mut summary = vec![0.0f32; self.weights.summary_dim];
+        let mut summary = [0.0f32; SUMMARY_LEN];
         self.normalizer.apply(&raw, &mut summary);
 
         // Summaries use the full represented prefix; the TCN only consumes its
         // receptive window, including normalized-space zero padding.
-        let mut window = vec![0.0f32; WINDOW * INPUT_CHANNELS];
+        let mut window = [0.0f32; WINDOW * INPUT_CHANNELS];
         let take = WINDOW.min(represented.len());
         for step in 0..take {
             let source = represented[represented.len() - take + step];
@@ -390,32 +409,25 @@ impl FastPlanner {
             None => head_from_seed(draw.planner_seed, HEADS as u32),
         };
 
-        let mut prediction = vec![0.0f32; OUT_DIM];
+        let mut prediction = [0.0f32; OUT_DIM];
         #[cfg(feature = "candle")]
         if let Some(engine) = self.candle.as_ref() {
             engine.forward(&window, &summary, chosen, &mut prediction)?;
         }
         if self.backend == NeuralInference::Native {
-            let mut head_weight = vec![0.0f32; CHANNELS * OUT_DIM];
-            for channel in 0..CHANNELS {
-                for slot in 0..OUT_DIM {
-                    head_weight[channel * OUT_DIM + slot] =
-                        self.weights.head_weight[(chosen * OUT_DIM + slot) * CHANNELS + channel];
-                }
-            }
-            let head_bias = &self.weights.head_bias[chosen * OUT_DIM..(chosen + 1) * OUT_DIM];
+            let base = chosen * CHANNELS * OUT_DIM;
             tcn::forward(
                 &self.weights,
                 &mut self.workspace,
                 &window,
                 &summary,
-                &head_weight,
-                head_bias,
+                &self.weights.head_weight_by_head[base..base + CHANNELS * OUT_DIM],
+                &self.weights.head_bias[chosen * OUT_DIM..(chosen + 1) * OUT_DIM],
                 &mut prediction,
             );
         }
 
-        let mut raw_output = vec![0.0f64; OUT_DIM];
+        let mut raw_output = [0.0f64; OUT_DIM];
         for slot in 0..OUT_DIM {
             raw_output[slot] = f64::from(prediction[slot]) * f64::from(self.y_std[slot])
                 + f64::from(self.y_mean[slot]);
@@ -424,18 +436,16 @@ impl FastPlanner {
             .clamp(0.0, (HORIZON as f64).ln())
             .exp();
         let duration = (duration.round_ties_even() as i64).clamp(1, HORIZON as i64) as usize;
-        let components = self.decoder.components(duration).clone();
-        let mut smooth = vec![[0.0f64; 2]; duration];
-        self.decoder.prodmp().generate_deltas(
-            &components,
+        self.decoder.decode(
+            duration,
             &raw_output[..OUT_DIM - 1],
             boundary_velocity,
-            &mut smooth,
+            &mut self.scratch[..duration],
         );
 
         Ok(Intent {
-            smooth_dxdy: smooth
-                .into_iter()
+            smooth_dxdy: self.scratch[..duration]
+                .iter()
                 .map(|row| [row[0] as f32, row[1] as f32])
                 .collect(),
             duration_ms: duration,
