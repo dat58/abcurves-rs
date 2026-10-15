@@ -35,37 +35,149 @@ composes the planner with the Renderer and returns integer hardware reports.
 
 ### The static handoff
 
-`StaticPipeline` continues a movement a person has already begun. Watch the real A→B
-motion with a `BTrigger`; when it fires it hands you every number the planner needs:
+`StaticPipeline` continues a movement a person has already begun. Give it where the
+movement started, where the target is, how big it is, and the reports observed so far:
 
 ```rust
-use abcurves::static_planner::{BEvent, BTrigger, Draw, Handoff, StaticPipeline};
+use abcurves::static_planner::{Draw, Movement, StaticPipeline};
 
+let movement = Movement::from_reports(a, target, radius, &observed);
+let reports = pipeline.continue_movement(&movement, &profile, Draw::seeded(2026))?;
+```
+
+B is the **last report supplied**. A to B is motion the mouse has already made, so it
+cannot be chosen after the fact; the library validates that point rather than picking
+its own. An unusable handoff is an error naming the rule it failed and by how much.
+
+`radius` is the "counted as a hit" radius in native counts, the target radius on screen
+divided by pixels per count. It is not decoration: the model reads it through
+`distance_over_radius`, `prefix_lateral / radius`, `speed_at_B / radius` and the
+edge-progress denominator, so it tells the model how precise it must be.
+
+#### The short-continuation floor
+
+Three rules in the frozen seam contract depend only on `|BC|`, the distance left at B,
+and the radius — whatever path was taken from A:
+
+| Rule | Constraint | 80% | 90% |
+| --- | --- | :-: | :-: |
+| `min_remaining_counts` | `\|BC\| >= 8` | yes | yes |
+| `require_outside_target` | `\|BC\| > radius` | yes | yes |
+| `min_edge_margin_counts` | `\|BC\| - radius >= 8` | no | yes |
+
+So a continuation with under 8 counts left cannot be planned at all; use the Continuous
+Planner, whose settling behaviour covers exactly that. Between those bounds the policy
+is chosen automatically, keeping the 90 percent recommendation when the geometry allows
+it and falling back to the 80 percent training contract when it does not.
+`Movement::eligible_remaining` reports the usable `|BC|` window up front, so you can
+plan the capture instead of discovering a refusal. `examples/static_simple.rs` sweeps
+it:
+
+```
+      BC     |BC|  policy  outcome
+   (4,4)     5.66       -  refused: |BC| is 5.66 counts, under the 8.0 the contract requires
+   (6,6)     8.49     80%  384 reports, 35 carry motion, last at 339 ms, travelling [6, 9]
+ (12,12)    16.97     90%  394 reports, 56 carry motion, last at 367 ms, travelling [14, 14]
+ (20,20)    28.28     90%  406 reports, 77 carry motion, last at 361 ms, travelling [21, 22]
+```
+
+#### Duration is the finishing style, not the distance
+
+A plan that is 384 ms long for 8.49 counts looks wrong and is not. The travel is over in
+about 17 ms; the rest is the micro-adjustment tail humans leave behind, which averages
+0.05 counts per millisecond and reaches the integer reports as a handful of ones among
+zeros — 35 of those 384 reports carry any motion at all, and the last of them lands at
+339 ms. Lengthening `|BC|` from 8.49 to 28.28 counts moves the duration only from 384 to
+406 ms, because what sets it is the head.
+
+The sixteen heads are sixteen learned finishing styles, and at one fixed geometry they
+span an order of magnitude: at BC `(6,6)` they plan 38 ms (head 1) through 384 ms
+(head 13), median 92 ms. A seed picks among them, so `Draw::seeded(n)` is a draw from
+that distribution, not a speed control. The seed used throughout these examples, 2026,
+draws head 13 — the longest dweller — on every event in the fixtures, so every example
+output here is the slow end of the range rather than a typical one. Pin a head with
+`Draw::seeded(n).head(k)` when the duration has to be bounded, or read
+`PreparedStream::duration_ms` before rendering and redraw if it does not fit the budget.
+
+#### Drawing every head at once
+
+Since the heads differ only in a 96 by 43 product on a shared trunk, all sixteen can be
+planned for the price of roughly one and a half:
+
+```rust
+let plans = pipeline.plan_movement_all(&movement)?;      // 483 us for sixteen
+let intent = plans.into_iter().min_by_key(|plan| plan.duration_ms).unwrap();
+let reports = pipeline.begin(&profile, intent, seed)?.render_remaining(pipeline.model())?;
+```
+
+Entry `k` is bit for bit what `continue_movement` returns for `draw.head(k)`, so nothing
+is lost by choosing after the fact; `tests/static_planner.rs` and `tests/static_pipeline.rs`
+pin that equality for all sixteen. Rendering is the half that does not batch:
+`continue_movement_all` exists, but the sixteen finishes of one handoff total about 2,300
+reports at 18 µs each, so it costs roughly 42 ms and belongs nowhere near a 1 ms tick.
+Choose from the plans — `duration_ms` and the cumulative `smooth_dxdy` are enough — and
+render once. `examples/static_choose.rs` does exactly that.
+
+One caution: the sixteen heads *are* the model's distribution of human finishes, and a
+seed draws from it uniformly. Always taking the shortest replaces that distribution with
+its own tail, which is a signature. Filter when a deadline forces it, and draw otherwise.
+
+#### When you do not know where B is
+
+A live application often has to be *told* when to take over. Drive a `BTrigger` instead,
+which fires at the first eligible crossing and hands you the same geometry:
+
+```rust
 let mut trigger = BTrigger::recommended();
 trigger.arm(target_rel_at_a, radius)?;
 
-for delta in &observed {
-    let target_now = [/* target_rel_at_a minus what has been travelled */];
-    if let Some(BEvent::Fire(fire)) = trigger.push_tick(dx, dy, target_now, radius)? {
-        let reports = pipeline.generate(
-            &prefix,                  // observed A to B bins, native counts
-            &profile,                 // prepared once from 256 genuine reports
-            Handoff::from(&fire),     // the geometry at B
-            Draw::seeded(2026),       // which head, which texture draw
-        )?;
-    }
+if let Some(BEvent::Fire(fire)) = trigger.push_tick(dx, dy, target_now, radius)? {
+    let reports =
+        pipeline.generate(&prefix, &profile, Handoff::from(&fire), Draw::seeded(2026))?;
 }
 ```
 
-`Handoff` groups the three numbers that describe B, and comes straight from `BFire`, so
-in the normal path you never assemble it by hand. Build one yourself with
-`Handoff::new` or `Handoff::from_observed` only when you establish B some other way.
-`Draw` groups the two seeds: `Draw::seeded(n)` uses one for both, `Draw::split(a, b)`
-separates them, and `.head(k)` pins a head instead of sampling.
+`Handoff` groups the three numbers describing B and comes straight from `BFire`. `Draw`
+groups the two seeds: `Draw::seeded(n)` uses one for both, `Draw::split(a, b)` separates
+them, `.head(k)` pins a head instead of sampling. Model choice is separate again: the
+`model_seed` argument to `StaticPipeline::from_pretrained` picks between the two
+independently trained cells, 7 and 23.
 
-Model choice is separate again: it is the `model_seed` argument to
-`StaticPipeline::from_pretrained`, which picks between the two independently trained
-cells (7 and 23).
+#### From a live 1 kHz capture
+
+`examples/static_live.rs` is the whole loop against a simulated capture, and it ends on
+the same numbers as `static_quickstart` — B at 168 ms, 341 reports, `[53, 92]` counts —
+which is the check that the live path and the offline path agree.
+
+| Phase | Work | Cost | When |
+| --- | --- | ---: | --- |
+| idle | bin reports, keep the last 256, `prepare_renderer_profile` | 2.7 ms | before any target |
+| approaching | `OnsetDetector::push`, then `BTrigger::push_tick` | < 1 µs per bin | every millisecond |
+| at B | `Movement::handoff` + `prepare` | 0.3 ms | once |
+| finishing | `PreparedStream::step` | 18 µs | every millisecond |
+
+Four things decide whether this works:
+
+**Feed it native counts, not pixels.** Everything in the crate is in the device's own
+counts with X right and **Y up**. A capture that reports Y down has to be negated, and
+one that reports pixels has to be divided by the pixels per count, radius included.
+
+**Close the bins yourself.** A 1 kHz device does not deliver exactly one report per
+millisecond. Accumulate by timestamp into 1 ms bins and emit `[0, 0]` for a bin that
+received nothing: an empty millisecond is real data, and dropping it shortens the
+movement the model sees. Only the last 160 bins reach the planner, but the trigger needs
+all of them from A.
+
+**The onset points backwards.** `OnsetDetector` needs about two dozen milliseconds of
+evidence before it will name A, and `OnsetEvent::index` then points at a bin well before
+the call that fired. So keep every bin since the target appeared, start the prefix at
+`index`, and replay the bins the trigger missed through `push_tick` before resuming live.
+Arming at the firing bin instead hands the trigger a movement that begins in the middle.
+
+**Prepare the profile while nothing is happening.** It is 2.7 ms, nine times the plan it
+precedes, and it depends only on the device and the hand — not on the target. One
+profile serves any number of events, so build it from a rolling 256-bin window during a
+quiet moment and refresh it between movements.
 
 ## Models
 
@@ -100,6 +212,9 @@ cargo run --release --example streaming         # composed planner and renderer
 cargo run --release --example assisted_start    # continue from real human history
 cargo run --release --example static_quickstart # seam trigger, then one B to C finish
 cargo run --release --example static_streaming  # the same finish, one report per tick
+cargo run --release --example static_simple     # A, target, radius, reports -> continuation
+cargo run --release --example static_choose     # plan all sixteen heads, render one
+cargo run --release --example static_live       # the full 1 kHz loop: bin, detect, plan, emit
 cargo run --release --example continuous_to_point # type a target, watch it acquire
 cargo run --release --example static_to_point     # the same, with the wrong planner
 ```
@@ -163,14 +278,23 @@ values are median microseconds per public call.
 | Continuous fresh call, motor evaluated | 602.8 | 474.2 | 1.3× |
 | Static renderer profile preparation | 3379 | 2664 | 1.3× |
 | Renderer 1 ms report | 21.9 | 18.0 | 1.2× |
-| Static fresh sampled-head plan | 361.2 | 464.2 | 0.8× |
+| Static fresh sampled-head plan | 361.2 | 319.7 | 1.1× |
+| Static plan, all sixteen heads | 5779 (sixteen calls) | 482.9 | **12×** |
+
+The sixteen-head row has no Python counterpart: the reference has no batch entry point,
+so the only way to get all sixteen there is sixteen full plans, which is what the 5,779 µs
+is. Sharing the trunk is what makes the Rust side 12× cheaper, not the kernels.
 
 The streaming and state-machine boundaries — the calls a 1 kHz output loop actually
 makes every millisecond — are one to two orders of magnitude cheaper. The two dense
 neural forward passes land near parity, because the Python path already dispatches
-those GEMMs to OpenBLAS; the Static encoder is currently about 28% slower than that
-hand-tuned kernel. The Renderer matches the reference C99 runtime, whose own receipt
-reports 18.8 µs per generated report.
+those GEMMs to OpenBLAS. The Renderer matches the reference C99 runtime, whose own
+receipt reports 18.8 µs per generated report.
+
+The static plan is the latency-critical one: once B closes, it has to finish before the
+output loop wants its next report. At 320 µs it fits inside a 1 ms tick with room to
+spare, provided the renderer profile was prepared in advance — that step costs 2.7 ms
+and must not happen at B.
 
 Without `-C target-cpu=native` the renderer costs 21.6 µs and a fresh motor call
 548 µs; every other figure is unchanged.

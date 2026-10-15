@@ -19,7 +19,8 @@ pub use error::{Error, Result};
 pub use nn::NeuralInference;
 pub use renderer::{RendererModel, RendererProfile, RendererStream};
 pub use static_planner::{
-    BEvent, BTrigger, Draw, FastPlanner, Handoff, Intent, OnsetDetector, StaticPipeline,
+    BEvent, BTrigger, Draw, FastPlanner, Handoff, Intent, Movement, OnsetDetector, Policy,
+    StaticPipeline,
 };
 
 pub fn load(options: ContinuousOptions) -> Result<MovementRuntime> {

@@ -165,7 +165,7 @@ impl OnsetDetector {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BConfig {
     pub threshold: f64,
     pub require_outside_target: bool,
@@ -231,6 +231,19 @@ pub struct BTrigger {
     max_progress_center: f64,
 }
 
+impl BConfig {
+    /// The qualified 90 percent inference setting: at the first crossing
+    /// require 24 observed milliseconds and 8 counts outside the target edge.
+    pub fn recommended() -> Self {
+        Self {
+            threshold: 0.9,
+            minimum_prefix: 24,
+            minimum_edge_margin: 8.0,
+            ..Self::default()
+        }
+    }
+}
+
 impl BTrigger {
     pub fn new(config: BConfig) -> Self {
         Self {
@@ -247,12 +260,7 @@ impl BTrigger {
     /// Prefer a qualified 90% edge-progress handoff: at the first crossing
     /// require 24 observed milliseconds and 8 counts outside the target edge.
     pub fn recommended() -> Self {
-        Self::new(BConfig {
-            threshold: 0.9,
-            minimum_prefix: 24,
-            minimum_edge_margin: 8.0,
-            ..BConfig::default()
-        })
+        Self::new(BConfig::recommended())
     }
 
     pub fn from_seam_contract() -> Self {

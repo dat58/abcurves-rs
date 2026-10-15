@@ -290,6 +290,23 @@ impl ComponentCache {
         }
     }
 
+    /// Decode straight out of the cache, without handing the caller a clone of
+    /// the component arrays.
+    pub fn decode(
+        &mut self,
+        duration: usize,
+        weights: &[f64],
+        velocity: [f64; 2],
+        out: &mut [[f64; 2]],
+    ) {
+        if self.cache[duration].is_none() {
+            self.cache[duration] = Some(self.prodmp.canonical_components(duration));
+        }
+        let components = self.cache[duration].as_ref().unwrap();
+        self.prodmp
+            .generate_deltas(components, weights, velocity, out);
+    }
+
     pub fn components(&mut self, duration: usize) -> &Components {
         if self.cache[duration].is_none() {
             self.cache[duration] = Some(self.prodmp.canonical_components(duration));

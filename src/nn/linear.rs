@@ -1,5 +1,5 @@
-const ROW_TILE: usize = 4;
-const COLUMN_TILE: usize = 32;
+const ROW_TILE: usize = 3;
+const COLUMN_TILE: usize = 96;
 
 #[inline]
 pub fn matvec(weight: &[f32], rows: usize, columns: usize, input: &[f32], out: &mut [f32]) {
@@ -52,39 +52,61 @@ pub fn matmul(
     columns: usize,
     out: &mut [f32],
 ) {
+    out[..rows * columns].fill(0.0);
+    matmul_accumulate::<ROW_TILE, COLUMN_TILE>(left, rows, inner, right, columns, out);
+}
+
+/// As `matmul`, but adds into `out` instead of replacing it. Splitting one
+/// contraction into several calls is bit exact, because the tile accumulator is
+/// float32 either way and a float32 store and reload is lossless.
+/// `RT` and `CT` size the register tile. The best pair depends on the shape:
+/// the motor's 96x288 contraction likes 4x32, the encoder's 96x96 likes 4x48.
+pub fn matmul_accumulate<const RT: usize, const CT: usize>(
+    left: &[f32],
+    rows: usize,
+    inner: usize,
+    right: &[f32],
+    columns: usize,
+    out: &mut [f32],
+) {
     let mut row = 0usize;
     while row < rows {
-        let block = ROW_TILE.min(rows - row);
+        let block = RT.min(rows - row);
         let mut column = 0usize;
-        while column + COLUMN_TILE <= columns {
-            let mut lanes = [[0.0f32; COLUMN_TILE]; ROW_TILE];
+        while column + CT <= columns {
+            let mut lanes = [[0.0f32; CT]; RT];
+            for inside in 0..block {
+                let at = (row + inside) * columns + column;
+                lanes[inside].copy_from_slice(&out[at..at + CT]);
+            }
             for step in 0..inner {
-                let source = &right[step * columns + column..step * columns + column + COLUMN_TILE];
+                let source = &right[step * columns + column..step * columns + column + CT];
                 for inside in 0..block {
                     let scale = left[(row + inside) * inner + step];
                     let target = &mut lanes[inside];
-                    for slot in 0..COLUMN_TILE {
+                    for slot in 0..CT {
                         target[slot] += scale * source[slot];
                     }
                 }
             }
             for inside in 0..block {
                 let at = (row + inside) * columns + column;
-                out[at..at + COLUMN_TILE].copy_from_slice(&lanes[inside]);
+                out[at..at + CT].copy_from_slice(&lanes[inside]);
             }
-            column += COLUMN_TILE;
+            column += CT;
         }
         while column < columns {
             for inside in 0..block {
-                let mut total = 0.0f32;
+                let at = (row + inside) * columns + column;
+                let mut total = out[at];
                 for step in 0..inner {
                     total += left[(row + inside) * inner + step] * right[step * columns + column];
                 }
-                out[(row + inside) * columns + column] = total;
+                out[at] = total;
             }
             column += 1;
         }
-        row += ROW_TILE;
+        row += RT;
     }
 }
 
