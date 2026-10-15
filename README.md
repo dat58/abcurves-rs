@@ -143,6 +143,42 @@ them, `.head(k)` pins a head instead of sampling. Model choice is separate again
 `model_seed` argument to `StaticPipeline::from_pretrained` picks between the two
 independently trained cells, 7 and 23.
 
+#### From a live 1 kHz capture
+
+`examples/static_live.rs` is the whole loop against a simulated capture, and it ends on
+the same numbers as `static_quickstart` — B at 168 ms, 341 reports, `[53, 92]` counts —
+which is the check that the live path and the offline path agree.
+
+| Phase | Work | Cost | When |
+| --- | --- | ---: | --- |
+| idle | bin reports, keep the last 256, `prepare_renderer_profile` | 2.7 ms | before any target |
+| approaching | `OnsetDetector::push`, then `BTrigger::push_tick` | < 1 µs per bin | every millisecond |
+| at B | `Movement::handoff` + `prepare` | 0.3 ms | once |
+| finishing | `PreparedStream::step` | 18 µs | every millisecond |
+
+Four things decide whether this works:
+
+**Feed it native counts, not pixels.** Everything in the crate is in the device's own
+counts with X right and **Y up**. A capture that reports Y down has to be negated, and
+one that reports pixels has to be divided by the pixels per count, radius included.
+
+**Close the bins yourself.** A 1 kHz device does not deliver exactly one report per
+millisecond. Accumulate by timestamp into 1 ms bins and emit `[0, 0]` for a bin that
+received nothing: an empty millisecond is real data, and dropping it shortens the
+movement the model sees. Only the last 160 bins reach the planner, but the trigger needs
+all of them from A.
+
+**The onset points backwards.** `OnsetDetector` needs about two dozen milliseconds of
+evidence before it will name A, and `OnsetEvent::index` then points at a bin well before
+the call that fired. So keep every bin since the target appeared, start the prefix at
+`index`, and replay the bins the trigger missed through `push_tick` before resuming live.
+Arming at the firing bin instead hands the trigger a movement that begins in the middle.
+
+**Prepare the profile while nothing is happening.** It is 2.7 ms, nine times the plan it
+precedes, and it depends only on the device and the hand — not on the target. One
+profile serves any number of events, so build it from a rolling 256-bin window during a
+quiet moment and refresh it between movements.
+
 ## Models
 
 The release models are bundled under `models/` (4.7 MB), so a clone runs with nothing
@@ -178,6 +214,7 @@ cargo run --release --example static_quickstart # seam trigger, then one B to C 
 cargo run --release --example static_streaming  # the same finish, one report per tick
 cargo run --release --example static_simple     # A, target, radius, reports -> continuation
 cargo run --release --example static_choose     # plan all sixteen heads, render one
+cargo run --release --example static_live       # the full 1 kHz loop: bin, detect, plan, emit
 cargo run --release --example continuous_to_point # type a target, watch it acquire
 cargo run --release --example static_to_point     # the same, with the wrong planner
 ```
