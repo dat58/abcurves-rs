@@ -165,3 +165,99 @@ fn streams_match_the_reference_planner() {
     assert!(worst_rms < 1e-4, "position rms {worst_rms:e}");
     assert!(worst_gap < 1.5e-3, "maximum position gap {worst_gap:e}");
 }
+
+struct Identity;
+
+impl abcurves::continuous::HeadChooser for Identity {}
+
+struct Recorder {
+    pin: usize,
+    seen: std::sync::Arc<std::sync::Mutex<Vec<(usize, usize)>>>,
+}
+
+impl abcurves::continuous::HeadChooser for Recorder {
+    fn motor(&mut self, candidates: &abcurves::continuous::MotorCandidates<'_>) -> usize {
+        self.seen
+            .lock()
+            .unwrap()
+            .push((candidates.sampled, self.pin));
+        assert_eq!(candidates.probabilities.len(), 16);
+        assert_eq!(candidates.geometry(self.pin).len(), 32);
+        assert!(
+            candidates
+                .probabilities
+                .iter()
+                .all(|value| value.is_finite() && *value >= 0.0)
+        );
+        self.pin
+    }
+}
+
+#[test]
+fn an_identity_chooser_leaves_the_stream_untouched() {
+    let root = models_root();
+    if !root.join("continuous").is_dir() {
+        eprintln!("skipping: {} is absent", root.display());
+        return;
+    }
+    let script = scenario(1, [0.0, 0.0]);
+    let plain = ContinuousOptions::default()
+        .seed(2026)
+        .assets(root.join("continuous"))
+        .load()
+        .unwrap();
+    let (times, points) = run(plain, &script);
+    let baseline = DECISIONS.with(|slot| slot.borrow().clone());
+
+    let mut hooked = ContinuousOptions::default()
+        .seed(2026)
+        .assets(root.join("continuous"))
+        .load()
+        .unwrap();
+    hooked.set_head_chooser(Identity);
+    let (hooked_times, hooked_points) = run(hooked, &script);
+    let hooked_decisions = DECISIONS.with(|slot| slot.borrow().clone());
+
+    assert_eq!(times, hooked_times);
+    assert_eq!(points, hooked_points);
+    assert_eq!(baseline, hooked_decisions);
+    assert!(!baseline.is_empty());
+}
+
+#[test]
+fn a_pinned_motor_head_is_the_head_that_runs() {
+    let root = models_root();
+    if !root.join("continuous").is_dir() {
+        eprintln!("skipping: {} is absent", root.display());
+        return;
+    }
+    let script = scenario(1, [0.0, 0.0]);
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let mut runtime = ContinuousOptions::default()
+        .seed(2026)
+        .assets(root.join("continuous"))
+        .load()
+        .unwrap();
+    runtime.set_head_chooser(Recorder {
+        pin: 5,
+        seen: seen.clone(),
+    });
+    let (times, points) = run(runtime, &script);
+    let decisions = DECISIONS.with(|slot| slot.borrow().clone());
+
+    let calls = seen.lock().unwrap();
+    assert!(calls.len() > 10, "the motor ran {} times", calls.len());
+    assert!(
+        calls.iter().any(|(sampled, pin)| sampled != pin),
+        "the pin never differed from the draw, so this proves nothing"
+    );
+    for decision in &decisions {
+        assert!(
+            decision.head == 5 || decision.head == -1,
+            "decision used head {}",
+            decision.head
+        );
+    }
+    assert_eq!(times.len(), points.len());
+    assert!(points.iter().flatten().all(|value| value.is_finite()));
+}

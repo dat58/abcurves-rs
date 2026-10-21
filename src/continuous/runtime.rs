@@ -1,6 +1,6 @@
 use super::constants::*;
 use super::kernels::Window;
-use super::planner::Planner;
+use super::planner::{HeadChooser, Planner};
 use crate::error::{Error, Result};
 use std::collections::VecDeque;
 use std::fmt;
@@ -430,5 +430,15 @@ impl MovementRuntime {
 
     pub fn planner_mut(&mut self) -> &mut Planner {
         &mut self.planner
+    }
+
+    /// Choose the motor and brake heads instead of letting the planner draw
+    /// them. See [`HeadChooser`].
+    pub fn set_head_chooser(&mut self, chooser: impl HeadChooser + 'static) {
+        self.planner.set_head_chooser(chooser);
+    }
+
+    pub fn clear_head_chooser(&mut self) {
+        self.planner.clear_head_chooser();
     }
 }

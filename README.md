@@ -179,6 +179,36 @@ precedes, and it depends only on the device and the hand — not on the target. 
 profile serves any number of events, so build it from a rolling 256-bin window during a
 quiet moment and refresh it between movements.
 
+### Choosing the continuous head
+
+The Continuous Planner proposes sixteen heads too, but unlike the Static Planner's
+uniform draw these are *scored*: a choice network produces a distribution over them and
+the planner samples it. All sixteen geometries are decoded on every motor evaluation
+anyway, so inspecting them costs nothing:
+
+```rust
+struct Deliberate;
+
+impl HeadChooser for Deliberate {
+    fn motor(&mut self, candidates: &MotorCandidates<'_>) -> usize {
+        candidates.most_likely()          // or weigh candidates.displacement(head)
+    }
+}
+
+runtime.set_head_chooser(Deliberate);
+```
+
+`HeadChooser` has two hooks, both defaulting to the drawn head: `motor` picks the
+movement shape, `brake` picks the stopping shape and sees each head's `durations`, the
+continuous counterpart of the static `duration_ms`. `PinnedHeads::motor(k)` is the
+ready-made chooser that holds one decision fixed.
+
+The draw happens whether or not a chooser overrides it, which is the point: the random
+words it consumes keep every later decision in the stream aligned with the reference, so
+an override changes the movement without desynchronising the planner. A chooser that
+returns `candidates.sampled` reproduces the untouched stream bit for bit, and
+`tests/continuous_stream.rs` asserts exactly that.
+
 ## Models
 
 The release models are bundled under `models/` (4.7 MB), so a clone runs with nothing
@@ -215,6 +245,7 @@ cargo run --release --example static_streaming  # the same finish, one report pe
 cargo run --release --example static_simple     # A, target, radius, reports -> continuation
 cargo run --release --example static_choose     # plan all sixteen heads, render one
 cargo run --release --example static_live       # the full 1 kHz loop: bin, detect, plan, emit
+cargo run --release --example continuous_choose # inspect and override the continuous heads
 cargo run --release --example continuous_to_point # type a target, watch it acquire
 cargo run --release --example static_to_point     # the same, with the wrong planner
 ```

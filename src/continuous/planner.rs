@@ -1,6 +1,6 @@
 use super::constants::*;
 use super::kernels::{self, EventFeatures, EventState, MotorFeatures, Window};
-use crate::error::{Error, Result};
+use crate::error::{Error, Result, require};
 use crate::io::Npz;
 use crate::math::log_f32;
 use crate::nn::{Engine, EventOutputs, NeuralInference, hazard_probabilities};
@@ -8,6 +8,128 @@ use crate::rng::{RandomStream, softmax_into};
 
 const SELECTOR_SALT: u64 = 0x5397A1;
 const BRAKE_SALT: u64 = 0x1763B4;
+
+/// The sixteen movement shapes the motor proposes, scored by the choice
+/// network, before one is drawn.
+///
+/// `geometries` holds each head's coarse preview: [`GEOMETRY_STEPS`] steps of
+/// `[dx, dy]`, laid out head-major. `sampled` is the head the model's own
+/// categorical draw produced, which is what the planner uses when no chooser
+/// is installed.
+pub struct MotorCandidates<'a> {
+    pub probabilities: &'a [f32; HEADS],
+    pub geometries: &'a [f32],
+    pub sampled: usize,
+}
+
+impl MotorCandidates<'_> {
+    pub fn geometry(&self, head: usize) -> &[f32] {
+        &self.geometries[head * GEOMETRY_STEPS * 2..(head + 1) * GEOMETRY_STEPS * 2]
+    }
+
+    /// Where the head's preview ends up, summed over its steps.
+    pub fn displacement(&self, head: usize) -> [f64; 2] {
+        self.geometry(head)
+            .chunks_exact(2)
+            .fold([0.0f64; 2], |total, step| {
+                [total[0] + f64::from(step[0]), total[1] + f64::from(step[1])]
+            })
+    }
+
+    pub fn most_likely(&self) -> usize {
+        let mut best = 0;
+        for head in 1..HEADS {
+            if self.probabilities[head] > self.probabilities[best] {
+                best = head;
+            }
+        }
+        best
+    }
+}
+
+/// The sixteen stopping shapes, scored when a movement decides to brake.
+///
+/// `durations` is each head's braking length in milliseconds, the continuous
+/// counterpart of the Static Planner's `duration_ms`.
+pub struct BrakeCandidates<'a> {
+    pub probabilities: &'a [f32; HEADS],
+    pub durations: &'a [f32],
+    pub sampled: usize,
+}
+
+impl BrakeCandidates<'_> {
+    pub fn most_likely(&self) -> usize {
+        let mut best = 0;
+        for head in 1..HEADS {
+            if self.probabilities[head] > self.probabilities[best] {
+                best = head;
+            }
+        }
+        best
+    }
+}
+
+/// Replace the planner's own head draws.
+///
+/// Both hooks default to `candidates.sampled`, which is the drawn head, so an
+/// implementation overrides only the decision it cares about. The draw happens
+/// either way: the random words it consumes keep every later decision in this
+/// stream aligned with the reference, so returning `sampled` is exactly the
+/// untouched planner.
+///
+/// A returned head outside `0..16` fails the plan rather than being clamped.
+pub trait HeadChooser: Send {
+    fn motor(&mut self, candidates: &MotorCandidates<'_>) -> usize {
+        candidates.sampled
+    }
+
+    fn brake(&mut self, candidates: &BrakeCandidates<'_>) -> usize {
+        candidates.sampled
+    }
+}
+
+/// Hold one or both decisions to a fixed head.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PinnedHeads {
+    pub motor: Option<usize>,
+    pub brake: Option<usize>,
+}
+
+impl PinnedHeads {
+    pub fn motor(head: usize) -> Self {
+        Self {
+            motor: Some(head),
+            brake: None,
+        }
+    }
+
+    pub fn brake(head: usize) -> Self {
+        Self {
+            motor: None,
+            brake: Some(head),
+        }
+    }
+
+    pub fn with_brake(mut self, head: usize) -> Self {
+        self.brake = Some(head);
+        self
+    }
+
+    pub fn with_motor(mut self, head: usize) -> Self {
+        self.motor = Some(head);
+        self
+    }
+}
+
+impl HeadChooser for PinnedHeads {
+    fn motor(&mut self, candidates: &MotorCandidates<'_>) -> usize {
+        self.motor.unwrap_or(candidates.sampled)
+    }
+
+    fn brake(&mut self, candidates: &BrakeCandidates<'_>) -> usize {
+        self.brake.unwrap_or(candidates.sampled)
+    }
+}
 
 pub struct Planner {
     engine: Engine,
@@ -56,6 +178,7 @@ pub struct Planner {
     pub motor_evaluations: u64,
     pub record_decisions: bool,
     pub decisions: Vec<Decision>,
+    chooser: Option<Box<dyn HeadChooser>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -113,6 +236,7 @@ impl Planner {
             motor_evaluations: 0,
             record_decisions: false,
             decisions: Vec::new(),
+            chooser: None,
         };
         planner.reset(7);
         Ok(planner)
@@ -172,7 +296,7 @@ impl Planner {
         self.stop_budget = -log_f32(self.brake_rng.uniform_scalar().max(1e-8));
     }
 
-    fn run_motor(&mut self, window: &Window<'_>) {
+    fn run_motor(&mut self, window: &Window<'_>) -> Result<()> {
         kernels::motor_features(window, &mut self.motor);
         self.engine
             .motor(&self.motor.coarse, &self.motor.fine, &self.motor.dynamics)
@@ -204,7 +328,16 @@ impl Planner {
             .expect("choice evaluation");
         let logits = self.engine.logits();
         softmax_into(&logits, &mut self.probabilities).expect("choice logits are finite");
-        let chosen = self.motor_rng.categorical(&self.probabilities);
+        let sampled = self.motor_rng.categorical(&self.probabilities);
+        let chosen = match self.chooser.as_mut() {
+            None => sampled,
+            Some(chooser) => chooser.motor(&MotorCandidates {
+                probabilities: &self.probabilities,
+                geometries: &self.heads,
+                sampled,
+            }),
+        };
+        require(chosen < HEADS, "chosen motor head is out of range")?;
         self.previous.copy_from_slice(
             &self.heads[chosen * GEOMETRY_STEPS * 2..(chosen + 1) * GEOMETRY_STEPS * 2],
         );
@@ -221,6 +354,7 @@ impl Planner {
             &self.carry_velocity[..COMMIT_SAMPLES],
             &mut self.action,
         );
+        Ok(())
     }
 
     pub fn plan(
@@ -309,10 +443,10 @@ impl Planner {
 
         let mut draws = [0.0f32; 2];
         self.selector_rng.uniform_into(&mut draws);
+        let mut brake_weights = [0.0f32; HEADS];
         let mut brake_head = if full_events {
-            let mut weights = [0.0f32; HEADS];
-            softmax_into(&self.outputs.frequency, &mut weights)?;
-            Some(self.brake_rng.categorical(&weights))
+            softmax_into(&self.outputs.frequency, &mut brake_weights)?;
+            Some(self.brake_rng.categorical(&brake_weights))
         } else {
             None
         };
@@ -324,11 +458,19 @@ impl Planner {
             if self.stop_integral >= f64::from(self.stop_budget) && known {
                 if !full_events {
                     self.engine.brake(&self.events.context, &mut self.outputs)?;
-                    let mut weights = [0.0f32; HEADS];
-                    softmax_into(&self.outputs.frequency, &mut weights)?;
-                    brake_head = Some(self.brake_rng.categorical(&weights));
+                    softmax_into(&self.outputs.frequency, &mut brake_weights)?;
+                    brake_head = Some(self.brake_rng.categorical(&brake_weights));
                 }
-                let head = brake_head.unwrap();
+                let sampled = brake_head.unwrap();
+                let head = match self.chooser.as_mut() {
+                    None => sampled,
+                    Some(chooser) => chooser.brake(&BrakeCandidates {
+                        probabilities: &brake_weights,
+                        durations: &self.outputs.duration,
+                        sampled,
+                    }),
+                };
+                require(head < HEADS, "chosen brake head is out of range")?;
                 self.mode = Some(MODE_BRAKE);
                 self.age = 0.0;
                 self.brake_velocity = window.history[last];
@@ -377,7 +519,7 @@ impl Planner {
         // geometry. Consuming its raw draw words keeps future seeds aligned.
         let moving = self.mode == Some(MODE_MOVE);
         if moving || full_events {
-            self.run_motor(window);
+            self.run_motor(window)?;
         } else {
             self.motor_rng.discard_categorical(HEADS);
             self.last_head = -1;
@@ -451,6 +593,22 @@ impl Planner {
         Ok(&self.action)
     }
 
+    /// Install a [`HeadChooser`], replacing any previous one.
+    ///
+    /// It survives [`reset`](Self::reset), because it is configuration rather
+    /// than state.
+    pub fn set_head_chooser(&mut self, chooser: impl HeadChooser + 'static) {
+        self.chooser = Some(Box::new(chooser));
+    }
+
+    pub fn clear_head_chooser(&mut self) {
+        self.chooser = None;
+    }
+
+    pub fn has_head_chooser(&self) -> bool {
+        self.chooser.is_some()
+    }
+
     pub fn prewarm(&mut self) {
         let history = vec![[0.0f64; 2]; HISTORY_SAMPLES];
         let target = vec![[100.0f64; 2]; HISTORY_SAMPLES];
@@ -465,7 +623,7 @@ impl Planner {
             position: [0.0, 0.0],
             cut_us: 0,
         };
-        self.run_motor(&window);
+        let _ = self.run_motor(&window);
         let _ = self.plan(&window, 0);
         let context = [0.0f32; EVENT_CONTEXT_LEN];
         let _ = self.engine.events(&context, &mut self.outputs);

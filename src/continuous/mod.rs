@@ -13,6 +13,6 @@ pub use pipeline::{
     ContinuousPipeline, CountTransform, PipelineAdvance, PipelineError, PipelineFailure,
     PipelineOptions,
 };
-pub use planner::{Decision, Planner};
+pub use planner::{BrakeCandidates, Decision, HeadChooser, MotorCandidates, PinnedHeads, Planner};
 pub use runtime::{Advance, AdvanceError, MovementRuntime, RuntimeFailure};
 pub use stream::{ContinuousOptions, load};
