@@ -6,18 +6,31 @@
 //! when it is not a usable handoff.
 //!
 //! The sweep uses a synthetic straight approach so BC can be set exactly; see
-//! `static_quickstart` for the same call driven by a recorded movement.
+//! `static_quickstart` for the same call driven by a recorded movement. That
+//! prefix is a constant-velocity crawl, which is well outside what the model
+//! was trained on, and it is why the two diagonals below land so differently.
+//! On the recorded captures they do not: the three fixture events land 17, 24
+//! and 11 counts from a 90, 58 and 74 count target, and mirroring each one
+//! gives 21, 24 and 8. The model is not meaningfully direction-biased.
 
 #[path = "support/mod.rs"]
 mod support;
 
 use abcurves::static_planner::{Draw, Movement, Policy, StaticPipeline};
 
-fn straight(component: f64, radius: f64) -> Movement {
-    // Stop at 90 percent of the way to the centre, leaving BC = (c, c).
+fn straight(component: f64, radius: f64, down: bool) -> Movement {
+    // Stop at 90 percent of the way to the centre, leaving |BC| = |(c, c)|.
+    // Screen Y is downward-positive, so `down` picks which diagonal the hand
+    // travelled; the model is not mirror-symmetric and answers them apart.
+    let sign = if down { 1.0 } else { -1.0 };
     let far = 10.0 * component;
     let step = ((9.0 * component) / 100.0) as f32;
-    Movement::from_counts([0.0, 0.0], [far, far], radius, &vec![[step, step]; 100])
+    Movement::from_counts(
+        [0.0, 0.0],
+        [far, far * sign],
+        radius,
+        &vec![[step, step * sign as f32]; 100],
+    )
 }
 
 fn motion_end(reports: &[[i16; 2]]) -> usize {
@@ -34,8 +47,10 @@ fn main() -> abcurves::Result<()> {
     let radius = 5.0;
     let seed = 2026;
     let mut pipeline = StaticPipeline::from_pretrained(7, None, true)?;
-    let profile = pipeline
-        .prepare_renderer_profile(&support::pairs_i16("static_event", "profile_before_a"))?;
+    let profile = pipeline.prepare_renderer_profile(&support::screen_pairs_i16(
+        "static_event",
+        "profile_before_a",
+    ))?;
 
     if let Some(window) =
         Movement::eligible_remaining([0.0, 0.0], [100.0, 100.0], radius, Policy::Auto)
@@ -49,11 +64,18 @@ fn main() -> abcurves::Result<()> {
     }
 
     println!("{:>8}  {:>7}  {:>6}  outcome", "BC", "|BC|", "policy");
-    for component in [4.0f64, 6.0, 8.0, 12.0, 16.0, 20.0] {
-        let movement = straight(component, radius);
+    for (component, down) in [4.0f64, 6.0, 12.0, 20.0]
+        .into_iter()
+        .flat_map(|value| [(value, true), (value, false)])
+    {
+        let movement = straight(component, radius, down);
         let remaining = movement.remaining();
         let magnitude = remaining[0].hypot(remaining[1]);
-        let label = format!("({component:.0},{component:.0})");
+        let label = if down {
+            format!("({component:.0},{component:.0})")
+        } else {
+            format!("({component:.0},-{component:.0})")
+        };
         match pipeline.continue_movement(&movement, &profile, Draw::seeded(seed)) {
             Ok(reports) => {
                 let travelled = reports.iter().fold([0i32; 2], |total, report| {
@@ -64,14 +86,16 @@ fn main() -> abcurves::Result<()> {
                 });
                 let moving = reports.iter().filter(|report| *report != &[0, 0]).count();
                 let policy = movement.resolved_policy()?.threshold * 100.0;
+                let miss = (f64::from(travelled[0]) - remaining[0])
+                    .hypot(f64::from(travelled[1]) - remaining[1]);
                 println!(
-                    "{label:>8}  {magnitude:>7.2}  {policy:>5.0}%  {} reports, {moving} carry \
-                     motion, last at {} ms, travelling {travelled:?}",
+                    "{label:>9}  {magnitude:>7.2}  {policy:>5.0}%  {:>3} reports, {moving:>2} carry \
+                     motion to {:>3} ms, travelling {travelled:?}, {miss:.1} off",
                     reports.len(),
                     motion_end(&reports)
                 );
             }
-            Err(error) => println!("{label:>8}  {magnitude:>7.2}  {:>6}  refused: {error}", "-"),
+            Err(error) => println!("{label:>9}  {magnitude:>7.2}  {:>6}  refused: {error}", "-"),
         }
     }
 
@@ -79,7 +103,7 @@ fn main() -> abcurves::Result<()> {
     // sixteen heads span an order of magnitude, and a seed only picks among
     // them. Seed 2026 happens to draw head 13, the longest dweller of the
     // sixteen, so it is the slowest row above rather than a typical one.
-    let movement = straight(6.0, radius);
+    let movement = straight(6.0, radius, true);
     let handoff = movement.handoff()?;
     let mut durations = Vec::new();
     for head in 0..16 {

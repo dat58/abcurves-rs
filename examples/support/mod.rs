@@ -39,6 +39,22 @@ pub fn pairs_i16(fixture: &str, field: &str) -> Vec<[i16; 2]> {
         .collect()
 }
 
+/// The same fixture as a downward-positive device would have delivered it.
+///
+/// The recordings are stored in the canonical x-right/y-up frame the models
+/// were trained in; hardware reports Y the other way, which is the frame the
+/// public API now speaks.
+pub fn screen_pairs_i16(fixture: &str, field: &str) -> Vec<[i16; 2]> {
+    pairs_i16(fixture, field)
+        .into_iter()
+        .map(|row| [row[0], -row[1]])
+        .collect()
+}
+
+pub fn screen_xy(values: &[f64]) -> [f64; 2] {
+    [values[0], -values[1]]
+}
+
 /// Release models live wherever `ABCURVES_MODEL_DIR` points, or beside a clone
 /// of the Python project.
 pub fn models_present() -> bool {

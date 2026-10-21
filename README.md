@@ -54,6 +54,26 @@ divided by pixels per count. It is not decoration: the model reads it through
 `distance_over_radius`, `prefix_lateral / radius`, `speed_at_B / radius` and the
 edge-progress denominator, so it tells the model how precise it must be.
 
+#### Frames
+
+Native counts cross the API in the hardware frame: **X right, Y down**, which is what a
+mouse reports and what `CountTransform` already assumed on the continuous side. The
+models are trained in the canonical upward-positive frame, so `StaticPipeline` reflects
+every report, prefix, profile window and handoff on the way in and reflects the generated
+reports back on the way out. `set_y_down(false)` turns that off for a capture that is
+already canonical.
+
+`Movement`, `BTrigger` and `OnsetDetector` need no frame at all: their rules are
+distances, dot products and progress fractions, every one of them invariant under the
+reflection, so they work in whichever frame you hand them as long as it is one frame
+throughout. `tests/static_pipeline.rs` pins the whole thing — the same capture mirrored
+and run through the hardware frame returns exactly the mirror of the canonical run, byte
+for byte.
+
+The continuous side is unchanged: `CountTransform { y_down }` already reflects native
+reports in and out, while common angular counts — what `update_target` and `Advance::xy`
+speak — stay canonical, as upstream has them.
+
 #### The short-continuation floor
 
 Three rules in the frozen seam contract depend only on `|BC|`, the distance left at B,
@@ -75,11 +95,17 @@ it:
 
 ```
       BC     |BC|  policy  outcome
-   (4,4)     5.66       -  refused: |BC| is 5.66 counts, under the 8.0 the contract requires
-   (6,6)     8.49     80%  384 reports, 35 carry motion, last at 339 ms, travelling [6, 9]
- (12,12)    16.97     90%  394 reports, 56 carry motion, last at 367 ms, travelling [14, 14]
- (20,20)    28.28     90%  406 reports, 77 carry motion, last at 361 ms, travelling [21, 22]
+    (4,4)     5.66       -  refused: |BC| is 5.66 counts, under the 8.0 the contract requires
+    (6,6)     8.49     80%  393 reports, 41 carry motion to 350 ms, travelling [12, 6], 6.0 off
+   (6,-6)     8.49     80%  384 reports, 35 carry motion to 339 ms, travelling [6, -9], 3.0 off
+  (20,20)    28.28     90%  418 reports, 81 carry motion to 361 ms, travelling [34, 27], 15.7 off
+ (20,-20)    28.28     90%  406 reports, 77 carry motion to 361 ms, travelling [21, -22], 2.2 off
 ```
+
+The two diagonals differ because that sweep's prefix is a synthetic constant-velocity
+crawl, far outside what the model saw in training. On the recorded captures they do not:
+the three fixture events land 17, 24 and 11 counts from a 90, 58 and 74 count target, and
+mirroring each one gives 21, 24 and 8.
 
 #### Duration is the finishing style, not the distance
 
@@ -146,7 +172,7 @@ independently trained cells, 7 and 23.
 #### From a live 1 kHz capture
 
 `examples/static_live.rs` is the whole loop against a simulated capture, and it ends on
-the same numbers as `static_quickstart` — B at 168 ms, 341 reports, `[53, 92]` counts —
+the same numbers as `static_quickstart` — B at 168 ms, 341 reports, `[53, -92]` counts —
 which is the check that the live path and the offline path agree.
 
 | Phase | Work | Cost | When |
@@ -158,9 +184,11 @@ which is the check that the live path and the offline path agree.
 
 Four things decide whether this works:
 
-**Feed it native counts, not pixels.** Everything in the crate is in the device's own
-counts with X right and **Y up**. A capture that reports Y down has to be negated, and
-one that reports pixels has to be divided by the pixels per count, radius included.
+**Feed it native counts, not pixels.** The API speaks the device's own counts in the
+hardware frame, X right and **Y down**, the same convention `CountTransform` already uses
+on the continuous side. A capture in pixels has to be divided by the pixels per count,
+radius included. `StaticPipeline::set_y_down(false)` switches the whole pipeline to the
+canonical upward-positive frame if that is what your capture produces.
 
 **Close the bins yourself.** A 1 kHz device does not deliver exactly one report per
 millisecond. Accumulate by timestamp into 1 ms bins and emit `[0, 0]` for a bin that

@@ -41,6 +41,16 @@ impl Policy {
 /// sample supplied — the movement from A to B has already physically happened,
 /// so the library validates that point rather than choosing its own.
 ///
+/// # Frame
+///
+/// Every value here is in native counts in whichever frame the capture uses,
+/// and the seam rules are reflection-invariant, so `Movement` never needs to
+/// know which one it is. [`StaticPipeline`](super::StaticPipeline) does: it
+/// reflects into the canonical frame on the way to the model and back on the
+/// way out, controlled by
+/// [`set_y_down`](super::StaticPipeline::set_y_down), which defaults to the
+/// hardware convention of downward-positive Y.
+///
 /// # Radius
 ///
 /// `radius` is the "counted as a hit" radius in native counts: the target

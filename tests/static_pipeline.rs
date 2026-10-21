@@ -97,6 +97,7 @@ fn seam_trigger_and_continuations_match_the_reference() {
                 for model_seed in [7u32, 23] {
                     let mut pipeline =
                         StaticPipeline::from_pretrained(model_seed, Some(&root), true).unwrap();
+                    pipeline.set_y_down(false);
                     let profile = pipeline.prepare_renderer_profile(&profile_window).unwrap();
                     for seed in [7u64, 2026, 12345] {
                         let out = pipeline
@@ -299,6 +300,8 @@ fn convenience_path_equals_the_explicit_path() {
     let reports = read_i16(FIXTURE, "reports");
 
     let mut pipeline = StaticPipeline::from_pretrained(7, Some(&root), true).unwrap();
+    // The fixtures are canonical, so the parity runs opt out of the hardware frame.
+    pipeline.set_y_down(false);
     let profile = pipeline.prepare_renderer_profile(&profile_window).unwrap();
     let mut cursor = 0usize;
     for (index, seed) in [7u64, 2026, 12345].into_iter().enumerate() {
@@ -378,6 +381,8 @@ fn rendering_every_head_matches_rendering_one() {
         .collect();
 
     let mut pipeline = StaticPipeline::from_pretrained(7, Some(&root), true).unwrap();
+    // The fixtures are canonical, so the parity runs opt out of the hardware frame.
+    pipeline.set_y_down(false);
     let profile = pipeline.prepare_renderer_profile(&profile_window).unwrap();
     let batch = pipeline
         .continue_movement_all(&movement, &profile, Draw::seeded(2026))
@@ -389,4 +394,64 @@ fn rendering_every_head_matches_rendering_one() {
             .unwrap();
         assert_eq!(batch[head], single, "head {head}");
     }
+}
+
+#[test]
+fn the_hardware_frame_is_exactly_a_reflection() {
+    use abcurves::static_planner::Movement;
+
+    let root = models_root();
+    if !root.join("planner_seed7.pt").is_file() {
+        eprintln!("skipping: {} is absent", root.display());
+        return;
+    }
+    let raw_flat = read_i16(FIXTURE, "raw");
+    let lengths = read_i64(FIXTURE, "raw_lengths");
+    let raw: Vec<[i16; 2]> = raw_flat[..lengths[0] as usize * 2]
+        .chunks_exact(2)
+        .map(|pair| [pair[0], pair[1]])
+        .collect();
+    let target_a = read_f64("static_pipeline_arm", "target_a_0");
+    let radius = read_f64("static_pipeline_arm", "radius_0")[0];
+    let ticks = read_i64(FIXTURE, "trigger_t")[0] as usize;
+    let profiles = read_i16(FIXTURE, "profiles");
+    let profile_window: Vec<[i16; 2]> = profiles[..512]
+        .chunks_exact(2)
+        .map(|p| [p[0], p[1]])
+        .collect();
+
+    let flip_i16 =
+        |rows: &[[i16; 2]]| -> Vec<[i16; 2]> { rows.iter().map(|row| [row[0], -row[1]]).collect() };
+
+    let mut canonical = StaticPipeline::from_pretrained(7, Some(&root), true).unwrap();
+    canonical.set_y_down(false);
+    let profile = canonical.prepare_renderer_profile(&profile_window).unwrap();
+    let up = Movement::from_reports(
+        [0.0, 0.0],
+        [target_a[0], target_a[1]],
+        radius,
+        &raw[..ticks],
+    );
+    let expected = canonical
+        .continue_movement(&up, &profile, Draw::seeded(2026))
+        .unwrap();
+
+    // The same capture as a downward-positive device would have delivered it.
+    let mut hardware = StaticPipeline::from_pretrained(7, Some(&root), true).unwrap();
+    assert!(hardware.y_down(), "the hardware frame is the default");
+    let screen_profile = hardware
+        .prepare_renderer_profile(&flip_i16(&profile_window))
+        .unwrap();
+    let down = Movement::from_reports(
+        [0.0, 0.0],
+        [target_a[0], -target_a[1]],
+        radius,
+        &flip_i16(&raw[..ticks]),
+    );
+    let actual = hardware
+        .continue_movement(&down, &screen_profile, Draw::seeded(2026))
+        .unwrap();
+
+    assert_eq!(actual, flip_i16(&expected));
+    assert!(expected.iter().any(|report| report[1] != 0));
 }

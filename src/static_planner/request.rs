@@ -43,8 +43,9 @@ use crate::error::{Result, require};
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Handoff {
-    /// Vector from B to the target centre, in canonical native counts with
-    /// X right and Y up. Not the absolute target position.
+    /// Vector from B to the target centre, in native counts in the same frame
+    /// as the reports it accompanies, which the pipeline reflects into the
+    /// canonical frame. Not the absolute target position.
     pub target_rel_at_b: [f64; 2],
     /// Target radius in the same counts. Must be positive.
     pub target_radius: f64,

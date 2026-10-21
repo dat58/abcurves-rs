@@ -23,8 +23,8 @@
 //! Use `static_quickstart` for the shape this planner is for, or
 //! `continuous_to_point` to actually acquire a target from a standing start.
 //!
-//! Coordinates are canonical native counts with X right and Y up. Flip Y if the
-//! consumer uses screen convention.
+//! Coordinates are native counts in the hardware frame: X right, Y down. Call
+//! `StaticPipeline::set_y_down(false)` to work in the canonical frame instead.
 
 #[path = "support/mod.rs"]
 mod support;
@@ -80,8 +80,10 @@ fn main() -> abcurves::Result<()> {
 
     let mut pipeline = StaticPipeline::from_pretrained(7, None, true)?;
     // A genuine 256-report sample from a real device supplies the packet texture.
-    let profile = pipeline
-        .prepare_renderer_profile(&support::pairs_i16("static_event", "profile_before_a"))?;
+    let profile = pipeline.prepare_renderer_profile(&support::screen_pairs_i16(
+        "static_event",
+        "profile_before_a",
+    ))?;
 
     let handoff = Handoff::new([x, y], radius, progress_center)?;
     let mut stream = pipeline.prepare(&prefix, &profile, handoff, Draw::seeded(seed))?;

@@ -8,16 +8,56 @@ use std::path::Path;
 
 pub const CONTEXT_TICKS: usize = 256;
 
+/// Hardware Y is downward-positive, so every native count crossing this
+/// boundary is reflected into the canonical x-right/y-up frame the models were
+/// trained in, and reflected back on the way out. Dot products, distances and
+/// the seam rules are invariant under that reflection, so `Movement`,
+/// `BTrigger` and `OnsetDetector` work in whichever frame they are handed, as
+/// long as it is one frame throughout.
+fn canonical_i16(report: [i16; 2], y_down: bool) -> [i16; 2] {
+    if y_down {
+        [report[0], report[1].wrapping_neg()]
+    } else {
+        report
+    }
+}
+
+fn canonical_f32(pair: [f32; 2], y_down: bool) -> [f32; 2] {
+    if y_down { [pair[0], -pair[1]] } else { pair }
+}
+
+fn canonical_f64(pair: [f64; 2], y_down: bool) -> [f64; 2] {
+    if y_down { [pair[0], -pair[1]] } else { pair }
+}
+
+fn canonical_handoff(handoff: Handoff, y_down: bool) -> Handoff {
+    Handoff {
+        target_rel_at_b: canonical_f64(handoff.target_rel_at_b, y_down),
+        ..handoff
+    }
+}
+
+fn canonical_intent(mut intent: Intent, y_down: bool) -> Intent {
+    if y_down {
+        for step in &mut intent.smooth_dxdy {
+            step[1] = -step[1];
+        }
+    }
+    intent
+}
+
 pub struct StaticPipeline {
     planner: FastPlanner,
     model: RendererModel,
     pub model_seed: u32,
+    y_down: bool,
 }
 
 pub struct PreparedStream {
     renderer: RendererStream,
     smooth: Vec<[f32; 2]>,
     tick: usize,
+    y_down: bool,
     pub head: usize,
 }
 
@@ -34,7 +74,21 @@ impl StaticPipeline {
             planner,
             model,
             model_seed,
+            y_down: true,
         })
+    }
+
+    /// Whether native counts crossing this pipeline are downward-positive.
+    /// Defaults to `true`, matching hardware and [`CountTransform`].
+    ///
+    /// [`CountTransform`]: crate::continuous::CountTransform
+    pub fn y_down(&self) -> bool {
+        self.y_down
+    }
+
+    pub fn set_y_down(&mut self, y_down: bool) -> &mut Self {
+        self.y_down = y_down;
+        self
     }
 
     pub fn prepare_renderer_profile(&self, raw_dxdy: &[[i16; 2]]) -> Result<RendererProfile> {
@@ -42,7 +96,11 @@ impl StaticPipeline {
             raw_dxdy.len() == CONTEXT_TICKS,
             "renderer context must contain exactly 256 integer reports",
         )?;
-        RendererProfile::prepare(&self.model, raw_dxdy)
+        let canonical: Vec<[i16; 2]> = raw_dxdy
+            .iter()
+            .map(|report| canonical_i16(*report, self.y_down))
+            .collect();
+        RendererProfile::prepare(&self.model, &canonical)
     }
 
     pub fn planner(&self) -> &FastPlanner {
@@ -68,11 +126,31 @@ impl StaticPipeline {
         handoff: Handoff,
         draw: Draw,
     ) -> Result<PreparedStream> {
-        let intent = self.planner.plan(prefix_raw_dxdy, handoff, draw)?;
-        self.begin(profile, intent, draw.renderer_seed)
+        let prefix: Vec<[f32; 2]> = prefix_raw_dxdy
+            .iter()
+            .map(|pair| canonical_f32(*pair, self.y_down))
+            .collect();
+        let intent = self
+            .planner
+            .plan(&prefix, canonical_handoff(handoff, self.y_down), draw)?;
+        self.open(profile, intent, draw.renderer_seed)
     }
 
+    /// Open a stream for an [`Intent`] this pipeline produced.
     pub fn begin(
+        &self,
+        profile: &RendererProfile,
+        intent: Intent,
+        renderer_event_seed: u64,
+    ) -> Result<PreparedStream> {
+        self.open(
+            profile,
+            canonical_intent(intent, self.y_down),
+            renderer_event_seed,
+        )
+    }
+
+    fn open(
         &self,
         profile: &RendererProfile,
         intent: Intent,
@@ -87,6 +165,7 @@ impl StaticPipeline {
             renderer: profile.begin_stream(renderer_event_seed)?,
             smooth: intent.smooth_dxdy,
             tick: 0,
+            y_down: self.y_down,
             head: intent.head,
         })
     }
@@ -113,8 +192,18 @@ impl StaticPipeline {
     /// [`begin`](Self::begin) with the renderer seed; the result is identical
     /// to having drawn that head in the first place.
     pub fn plan_movement_all(&mut self, movement: &Movement) -> Result<Vec<Intent>> {
-        let handoff = movement.handoff()?;
-        self.planner.plan_all(movement.prefix(), handoff)
+        let handoff = canonical_handoff(movement.handoff()?, self.y_down);
+        let prefix: Vec<[f32; 2]> = movement
+            .prefix()
+            .iter()
+            .map(|pair| canonical_f32(*pair, self.y_down))
+            .collect();
+        Ok(self
+            .planner
+            .plan_all(&prefix, handoff)?
+            .into_iter()
+            .map(|intent| canonical_intent(intent, self.y_down))
+            .collect())
     }
 
     /// Every head's finish, rendered.
@@ -168,7 +257,7 @@ impl PreparedStream {
         }
         let report = self.renderer.step(model, self.smooth[self.tick])?;
         self.tick += 1;
-        Ok(report)
+        Ok(canonical_i16(report, self.y_down))
     }
 
     pub fn render_remaining(&mut self, model: &RendererModel) -> Result<Vec<[i16; 2]>> {

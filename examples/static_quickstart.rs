@@ -9,10 +9,10 @@ fn main() -> abcurves::Result<()> {
     if !support::models_present() {
         return Ok(());
     }
-    let raw = support::pairs_i16("static_event", "raw_dxdy");
-    let target_a = support::f64s("static_event", "target_rel_a");
+    let raw = support::screen_pairs_i16("static_event", "raw_dxdy");
+    let target_a = support::screen_xy(&support::f64s("static_event", "target_rel_a"));
     let radius = support::f64s("static_event", "target_radius")[0];
-    let profile_window = support::pairs_i16("static_event", "profile_before_a");
+    let profile_window = support::screen_pairs_i16("static_event", "profile_before_a");
 
     // A was audited in this recorded example. In live use the causal
     // OnsetDetector establishes A, then this trigger observes only the

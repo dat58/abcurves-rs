@@ -203,6 +203,8 @@ fn static_planner(root: &Path) {
     let mut complete = Samples::new("Static complete handoff through last report");
 
     let mut pipeline = StaticPipeline::from_pretrained(7, Some(root), true).unwrap();
+    // The fixtures are canonical, and so is the Python side these rows compare to.
+    pipeline.set_y_down(false);
     let profile_window: Vec<[i16; 2]> = profiles[..512]
         .chunks_exact(2)
         .map(|p| [p[0], p[1]])
