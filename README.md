@@ -237,6 +237,55 @@ an override changes the movement without desynchronising the planner. A chooser 
 returns `candidates.sampled` reproduces the untouched stream bit for bit, and
 `tests/continuous_stream.rs` asserts exactly that.
 
+### Driving it in real time
+
+`advance(t)` is a *sample clock*, not a wall clock. It commits every 1 ms sample up to
+`t`, returns the ones it just completed, and leaves pacing entirely to the caller. Two
+properties follow from that, and `examples/continuous_live.rs` is the loop they imply.
+
+**Run ahead of the output clock.** Most ticks cost about 22 µs, but the three or four
+that re-run the motor network cost about 0.9 ms, which is almost the whole millisecond
+they are due in. Advancing a few milliseconds past the report that is due now puts that
+spike into a queue instead of into a missed report:
+
+```rust
+let wanted = tick * 1_000 + 8_000;          // eight milliseconds of slack
+if wanted > sample_us {
+    queued.extend(stream.advance(wanted)?.reports);
+    sample_us = wanted;
+}
+let report = queued.pop_front().unwrap_or([0, 0]);
+```
+
+**Lookahead is paid for in freshness.** `update_target` refuses a timestamp preceding
+committed movement, so a target observed while the planner is 8 ms ahead can only be
+stamped at the sample clock, and the planner reacts to it 8 ms late. Buy only the slack
+the loop needs.
+
+**The target is an absolute point in common angular counts.** An application has a gap in
+native counts instead, so convert with `CountTransform::common_per_native` and add it to
+`current_xy`, which is what `target - position` is read against. Use `current_xy`, not
+`rendered_xy`: the planner plans in its own frame, and the renderer's quantisation leaves
+the two about a third of a count apart.
+
+#### What a correction actually costs
+
+A 50 count gap under the bundled sensitivity is 161 common counts, about 3.2 degrees, and
+the planner answers it the way a hand does. Over 64 seeds it waits **4 to 389 ms before
+moving at all**, covers 90 percent of the distance between 99 and 472 ms, and lands inside
+five counts between 107 and 562 ms, with five of the 64 still adjusting at 600 ms.
+
+That pause is a learned decision taken before any head exists, so pinning a head moves the
+settle and not the start: across all sixteen motor heads the first report still leaves at
+69 ms for seed 7 and at 229 ms for seed 2026, while the time to land inside five counts
+swings from 127 ms to 483 ms. **Under 100 ms is outside what this planner does**, and no
+knob changes that — reproducing the delay is the product.
+
+A sub-100 ms finish is a Static Planner request. That model never represents reaction
+because it takes over a hand that is already moving, its sixteen heads span 39 to 393 ms
+on one handoff, and `plan_movement_all` prices all sixteen at once so a budget can pick
+among them; see [Drawing every head at once](#drawing-every-head-at-once).
+
 ## Models
 
 The release models are bundled under `models/` (4.7 MB), so a clone runs with nothing
@@ -261,7 +310,7 @@ the anchors, which is useful when upstream publishes a new release.
 
 ## Examples
 
-Five runnable examples mirror the ones in the Python project. The recorded inputs they
+The runnable examples mirror the ones in the Python project. The recorded inputs they
 read are bundled under `examples/data/`, so only the release models are needed.
 
 ```bash
@@ -274,6 +323,7 @@ cargo run --release --example static_simple     # A, target, radius, reports -> 
 cargo run --release --example static_choose     # plan all sixteen heads, render one
 cargo run --release --example static_live       # the full 1 kHz loop: bin, detect, plan, emit
 cargo run --release --example continuous_choose # inspect and override the continuous heads
+cargo run --release --example continuous_live   # the 1 kHz loop: lookahead, retarget, emit
 cargo run --release --example continuous_to_point # type a target, watch it acquire
 cargo run --release --example static_to_point     # the same, with the wrong planner
 ```
